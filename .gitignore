@@ -1,0 +1,16 @@
+# Model weights are downloaded/imported after app installation, never committed.
+*.gguf
+*.gguf.*
+# Local Android build state and keys.
+android/.gradle/
+android/local.properties
+android/**/build/
+.gradle/
+*.jks
+*.keystore
+*.apk
+*.aab
+.env
+.env.*
+.idea/
+.DS_Store
