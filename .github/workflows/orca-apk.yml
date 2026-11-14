@@ -23,10 +23,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Find Android SDK
-        run: |
-          echo "ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
-          sdkmanager --version
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools"
       - name: Install native build dependencies
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
       - name: Build ORCA debug APK
