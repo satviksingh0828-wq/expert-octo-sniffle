@@ -50,3 +50,8 @@ Personalization is fused into soft neural decisions as a capped prior, never mor
 A new system-state monitor adds Android device-idle/Doze, interactive/user-present state and thermal pressure. Device idle or non-interactive state causes sleep immediately. Severe thermal pressure biases idle behavior toward sleep. Long sessions (90+ minutes) that become idle also rest instead of remaining indefinitely active.
 
 The ORCA screen now includes **Reset learned habits**, which clears the persistent personalization counters. The signal monitors remain event-driven and unregister when the floating pet service stops.
+
+
+## Adaptive motion sampling
+
+The accelerometer is sampled only while the pet service is running, the display is interactive and Android battery saver is off. Screen and power-save broadcasts immediately update the sampling policy; suspending sampling clears stale motion features. Network and audio-route callbacks remain event-driven. This saves sensor work without requiring any new permission. Verify screen-off/on, battery-saver toggles, and resumed motion on a real device.
