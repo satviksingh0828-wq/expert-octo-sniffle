@@ -20,6 +20,7 @@ import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import com.clawd.mobile.ClawdApp
 import com.clawd.mobile.R
+import com.clawd.mobile.orca.OrcaDeviceSignalMonitor
 import com.clawd.mobile.data.PrefsStore
 import com.clawd.mobile.service.WsConnectionService
 import kotlinx.coroutines.CoroutineScope
@@ -81,6 +82,7 @@ class FloatingPetService : Service() {
 
     // --- Broadcast receiver ---
     private var broadcastReceiver: BroadcastReceiver? = null
+    private var deviceSignalMonitor: OrcaDeviceSignalMonitor? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -103,6 +105,7 @@ class FloatingPetService : Service() {
         loadPrefs()
         registerBroadcastReceiver()
         syncDeviceContext()
+        deviceSignalMonitor = OrcaDeviceSignalMonitor(applicationContext).also { it.start() }
         showFloatingWindow()
         reloadGif()
         started = true
@@ -137,6 +140,8 @@ class FloatingPetService : Service() {
             stateManager.reset()
             commandCollectorJob?.cancel()
             unregisterBroadcastReceiver()
+            deviceSignalMonitor?.stop()
+            deviceSignalMonitor = null
             windowController?.savePosition(prefsStore)
             windowController?.removeView()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -169,6 +174,8 @@ class FloatingPetService : Service() {
         localReactionJob?.cancel()
         scope.cancel()
         unregisterBroadcastReceiver()
+        deviceSignalMonitor?.stop()
+        deviceSignalMonitor = null
         windowController?.savePosition(prefsStore)
         windowController?.removeView()
         petView?.destroy()
