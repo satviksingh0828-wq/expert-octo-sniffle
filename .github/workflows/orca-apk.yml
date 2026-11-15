@@ -2,7 +2,7 @@ name: ORCA Standalone APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, feature/orca-context-neural-brain]
+    branches: [main, 'feature/**']
     paths:
       - 'android/**'
       - '.gitmodules'
