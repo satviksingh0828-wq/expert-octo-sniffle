@@ -312,21 +312,26 @@ class FloatingPetService : Service() {
             layoutParams = layoutParams!!
         )
 
-        bubbleManager = PetBubbleManager(
-            context = this,
-            windowManager = windowManager!!,
-            scope = scope,
-            getPetView = { petView },
-            onEnterApp = { openApp() }
-        )
+        // Standalone ORCA is animation-only: do not create legacy session or
+        // approval text bubbles over the Calico overlay. The original Clawd
+        // connection mode keeps both bubbles unchanged.
+        if (character != "calico") {
+            bubbleManager = PetBubbleManager(
+                context = this,
+                windowManager = windowManager!!,
+                scope = scope,
+                getPetView = { petView },
+                onEnterApp = { openApp() }
+            )
 
-        approvalBubbleManager = PetApprovalBubbleManager(
-            context = this,
-            windowManager = windowManager!!,
-            scope = scope,
-            getPetView = { petView },
-            getPetLayoutParams = { layoutParams }
-        )
+            approvalBubbleManager = PetApprovalBubbleManager(
+                context = this,
+                windowManager = windowManager!!,
+                scope = scope,
+                getPetView = { petView },
+                getPetLayoutParams = { layoutParams }
+            )
+        }
 
         gestureHandler = PetGestureHandler(
             context = this,
