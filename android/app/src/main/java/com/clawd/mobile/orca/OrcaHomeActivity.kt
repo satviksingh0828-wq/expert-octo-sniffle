@@ -35,6 +35,7 @@ import kotlinx.coroutines.delay
 class OrcaHomeActivity : ComponentActivity() {
     private var running by mutableStateOf(false)
     private var overlayPermissionPending = false
+    private var accessibilityPromptShown = false
     private var logVersion by mutableIntStateOf(0)
 
     private val overlayPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -69,7 +70,7 @@ class OrcaHomeActivity : ComponentActivity() {
                         Text(if (running) "Stop" else "Start")
                     }
                     if (!running && !OrcaPrivacy.accessibilityServiceEnabled(this@OrcaHomeActivity)) {
-                        Text("The first Start may open Android Accessibility settings. Enable ORCA there so it can receive screen descriptions.")
+                        Text("Press Start, then open Android Settings > Accessibility > Installed apps > ORCA and turn on Use ORCA. Return here after enabling it.")
                     }
                     HorizontalDivider()
                     Text("Test logs", style = MaterialTheme.typography.titleLarge)
@@ -105,8 +106,13 @@ class OrcaHomeActivity : ComponentActivity() {
         }
         startOrca()
         if (!OrcaPrivacy.accessibilityServiceEnabled(this)) {
-            log("Enable ORCA in Accessibility settings for automatic screen descriptions.")
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            if (!accessibilityPromptShown) {
+                accessibilityPromptShown = true
+                log("ACTION NEEDED: Android Settings > Accessibility > Installed apps > ORCA > turn on Use ORCA, then return to ORCA.")
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+        } else {
+            log("Accessibility service is enabled; automatic screen descriptions are active.")
         }
     }
 

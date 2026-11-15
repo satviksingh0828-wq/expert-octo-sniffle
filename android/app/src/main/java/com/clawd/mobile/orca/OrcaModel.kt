@@ -9,7 +9,7 @@ object OrcaModel {
 
     fun decide(context: Context, app: String, visible: String, done: (String) -> Unit) {
         val animation = OrcaActivityEngine.decide(app, visible)
-        OrcaLogStore.append(context, "Screen description classified as ${OrcaActivityEngine.describe(animation)} → $animation")
+        OrcaLogStore.append(context, "Screen description classified as ${OrcaActivityEngine.describe(animation)} -> $animation")
         done(animation)
     }
 
