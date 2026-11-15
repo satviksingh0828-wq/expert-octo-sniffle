@@ -125,5 +125,5 @@ class OrcaBehaviorMemory {
     private fun totalKey(key: ContextKey) = "t_${key.id}"
 
     private fun has(text: String, vararg fragments: String) =
-        fragments.any(text::contains)
+        fragments.any { text.contains(it) }
 }
