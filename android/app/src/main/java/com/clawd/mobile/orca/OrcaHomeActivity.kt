@@ -77,7 +77,14 @@ class OrcaHomeActivity : ComponentActivity() {
                     }) {
                         Text("Enable notification reactions")
                     }
-                    Text("Notification Access is optional. ORCA reacts to notification arrival without reading message text.")
+                    Text("Notification Access is optional. Enables media playback detection without saving messages.")
+                    Text(OrcaContextBrain.debugSummary(), style = MaterialTheme.typography.bodySmall)
+                    Text("Teach ORCA", style = MaterialTheme.typography.titleMedium)
+                    androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { OrcaContextBrain.teach(this@OrcaHomeActivity, OrcaIntent.READING) }) { Text("Reading") }
+                        OutlinedButton(onClick = { OrcaContextBrain.teach(this@OrcaHomeActivity, OrcaIntent.MUSIC) }) { Text("Music") }
+                        OutlinedButton(onClick = { OrcaContextBrain.teach(this@OrcaHomeActivity, OrcaIntent.CODING) }) { Text("Coding") }
+                    }
                     HorizontalDivider()
                     Text("Test animations", style = MaterialTheme.typography.titleLarge)
                     androidx.compose.foundation.layout.Row(
@@ -154,6 +161,7 @@ class OrcaHomeActivity : ComponentActivity() {
 
     private fun stopOrca() {
         OrcaPrivacy.setEnabled(this, false)
+        OrcaContextBrain.stop()
         PrefsStore.getInstance(this).setFloatingPetEnabled(false)
         stopService(Intent(this, FloatingPetService::class.java))
         running = false
