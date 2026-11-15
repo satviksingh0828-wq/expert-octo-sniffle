@@ -7,8 +7,8 @@ object OrcaModel {
     fun installed(context: Context): Boolean = true
     fun nativeAvailable(): Boolean = false
 
-    fun decide(context: Context, app: String, visible: String, done: (String) -> Unit) {
-        val animation = OrcaActivityEngine.decide(app, visible)
+    fun decide(context: Context, app: String, visible: String, typing: Boolean = false, done: (String) -> Unit) {
+        val animation = if (typing) "calico-working-typing.apng" else OrcaActivityEngine.decide(app, visible)
         OrcaLogStore.append(context, "Screen description classified as ${OrcaActivityEngine.describe(animation)} -> $animation")
         done(animation)
     }

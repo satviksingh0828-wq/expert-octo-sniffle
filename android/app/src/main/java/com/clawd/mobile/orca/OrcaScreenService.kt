@@ -12,22 +12,36 @@ class OrcaScreenService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
         if (!OrcaPrivacy.enabled(this)) return
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+        val source = event.source
+        val typingEvent = event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ||
+            (event.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED && source?.isEditable == true)
+        if (!typingEvent && event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
         val now = android.os.SystemClock.elapsedRealtime()
-        if (now - lastAt < 9000L) return
+        val throttleMs = if (typingEvent) 700L else 9000L
+        if (now - lastAt < throttleMs) return
         val pkg = event.packageName?.toString() ?: return
         if (pkg == packageName || !OrcaPrivacy.allowedPackage(pkg)) return
-        val root = rootInActiveWindow ?: return
         val fragments = ArrayList<String>()
-        try { collectText(root, fragments, 0) } finally { root.recycle() }
+        event.text.forEach { value ->
+            value.toString().trim().takeIf { it.isNotEmpty() }?.let { fragments.add(it) }
+        }
+        if (source?.isPassword == true) return
+        val root = rootInActiveWindow
+        if (root != null) {
+            try { collectText(root, fragments, 0) } finally { root.recycle() }
+        }
+        if (typingEvent && source?.isEditable == true) {
+            fragments.add("[text input active]")
+        }
         if (fragments.isEmpty()) return
         val context = OrcaPrivacy.sanitize(fragments.joinToString(" | ").take(1200))
-        if (context == lastContext) return
+        if (!typingEvent && context == lastContext) return
         lastContext = context
         lastAt = now
         // In-app delivery: no Termux, HTTP endpoint, or external server required.
-        OrcaModel.decide(applicationContext, pkg, context) { decision ->
+        OrcaModel.decide(applicationContext, pkg, context, typingEvent) { decision ->
+            if (typingEvent) OrcaLogStore.append(applicationContext, "Text input event detected in $pkg")
             OrcaLogStore.append(applicationContext, "Accessibility description received from $pkg; selected $decision")
             if (OrcaPrivacy.enabled(applicationContext)) OrcaPetController.react(applicationContext, decision)
         }
