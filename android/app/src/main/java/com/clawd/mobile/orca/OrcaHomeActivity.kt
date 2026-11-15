@@ -72,6 +72,27 @@ class OrcaHomeActivity : ComponentActivity() {
                     if (!running && !OrcaPrivacy.accessibilityServiceEnabled(this@OrcaHomeActivity)) {
                         Text("Press Start, then open Android Settings > Accessibility > Installed apps > ORCA and turn on Use ORCA. Return here after enabling it.")
                     }
+                    OutlinedButton(onClick = {
+                        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    }) {
+                        Text("Enable notification reactions")
+                    }
+                    Text("Notification Access is optional. ORCA reacts to notification arrival without reading message text.")
+                    HorizontalDivider()
+                    Text("Test animations", style = MaterialTheme.typography.titleLarge)
+                    androidx.compose.foundation.layout.Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(onClick = {
+                            OrcaPetController.reactEvent(this@OrcaHomeActivity, "typing")
+                        }) { Text("Typing") }
+                        OutlinedButton(onClick = {
+                            OrcaPetController.reactEvent(this@OrcaHomeActivity, "notification")
+                        }) { Text("Alert") }
+                        OutlinedButton(onClick = {
+                            OrcaPetController.reactEvent(this@OrcaHomeActivity, "success")
+                        }) { Text("Happy") }
+                    }
                     HorizontalDivider()
                     Text("Test logs", style = MaterialTheme.typography.titleLarge)
                     OutlinedButton(onClick = { OrcaLogStore.clear(this@OrcaHomeActivity); logVersion++ }) { Text("Clear logs") }
