@@ -2,9 +2,10 @@
 
 ## Architecture
 - User-enabled Android Accessibility provides foreground package, focus, text-change, scroll, tap and optional **non-editable** UI labels.
+- Permission-free device context adds battery level, charging, power-save state, orientation and time-of-day as coarse neural inputs.
 - Optional NotificationListener grants notification-arrival events and active MediaSession playback **state**, not message or music contents.
 - The context brain stores **ephemeral metadata only**, timestamps, context tags, and state. App-specific heuristics are limited to known package name patterns.
-- An on-device 20→24→12 MLP neural classifier is trained at bootstrap on 7,200 synthetic metadata scenarios and optionally fine-tuned on explicit user feedback. It requires no servers or model downloads.
+- An on-device 26→24→12 MLP neural classifier is trained at bootstrap on 7,200 synthetic metadata scenarios and optionally fine-tuned on explicit user feedback. It requires no servers or model downloads.
 - An event-driven state arbiter prioritizes active typing, 10-second typing pause, screen-off, short notification, error/success, music/video playback, idle and neural classifications.
 - Only user-corrected numeric neural weights are persisted. No screenshot, messages, URLs, contacts, media titles or raw screen text are saved.
 
@@ -25,3 +26,7 @@ This is a genuine neural classifier, **not** a large language model, pretrained 
 
 ## Privacy and model quality
 The model uses only coarse features. Heuristic guards are deliberate because incorrect neural predictions must not override clear typing and playback signals. The app does not request screenshot access or MediaProjection. Real device validation and battery benchmarking remain necessary.
+
+
+## Device context inputs
+Battery percentage is reduced to coarse normalized state, charging/power-save are booleans, orientation is portrait/landscape, and time-of-day is a coarse local bucket. These signals are event-driven where Android exposes broadcasts; ORCA does not poll them continuously.

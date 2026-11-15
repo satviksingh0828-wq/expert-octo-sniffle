@@ -6,9 +6,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import androidx.core.content.ContextCompat
 import android.graphics.PixelFormat
+import android.os.BatteryManager
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
@@ -99,6 +102,7 @@ class FloatingPetService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification())
         loadPrefs()
         registerBroadcastReceiver()
+        syncDeviceContext()
         showFloatingWindow()
         reloadGif()
         started = true
@@ -427,6 +431,10 @@ class FloatingPetService : Service() {
                 when (intent.action) {
                     Intent.ACTION_SCREEN_OFF -> com.clawd.mobile.orca.OrcaContextBrain.onScreen(applicationContext, false)
                     Intent.ACTION_SCREEN_ON -> com.clawd.mobile.orca.OrcaContextBrain.onScreen(applicationContext, true)
+                    Intent.ACTION_BATTERY_CHANGED -> syncDeviceContext(intent)
+                    Intent.ACTION_POWER_CONNECTED,
+                    Intent.ACTION_POWER_DISCONNECTED,
+                    PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> syncDeviceContext()
                     ACTION_PET_SIZE -> {
                         sizeDp = intent.getIntExtra(EXTRA_SIZE_DP, DEFAULT_SIZE_DP)
                         updateSize()
@@ -451,6 +459,10 @@ class FloatingPetService : Service() {
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
+            addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
             addAction(ACTION_PET_SIZE)
             addAction(ACTION_PET_CHARACTER)
             addAction(ACTION_PET_RECENTER)
@@ -459,6 +471,30 @@ class FloatingPetService : Service() {
         ContextCompat.registerReceiver(this, broadcastReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        syncDeviceContext()
+    }
+
+    private fun syncDeviceContext(batteryIntent: Intent? = null) {
+        val battery = batteryIntent ?: registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        val percent = if (level >= 0 && scale > 0) ((level * 100f) / scale).toInt() else null
+        val status = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
+            ?: BatteryManager.BATTERY_STATUS_UNKNOWN
+        val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+            status == BatteryManager.BATTERY_STATUS_FULL
+        val powerSave = (getSystemService(POWER_SERVICE) as? PowerManager)?.isPowerSaveMode ?: false
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        com.clawd.mobile.orca.OrcaContextBrain.onDeviceContext(
+            applicationContext,
+            batteryPercent = percent,
+            isCharging = charging,
+            isPowerSave = powerSave,
+            isLandscape = landscape
+        )
+    }
     private fun unregisterBroadcastReceiver() {
         broadcastReceiver?.let {
             try { unregisterReceiver(it) } catch (e: Exception) {

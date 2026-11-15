@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import com.clawd.mobile.overlay.FloatingPetService
+import java.util.Calendar
 
 /**
  * Privacy-conscious, event-driven local context memory and animation director.
@@ -34,6 +35,10 @@ object OrcaContextBrain {
     private var musicPlaying = false
     private var mediaPackage = ""
     private var screenOn = true
+    private var batteryFraction = 1f
+    private var charging = false
+    private var powerSave = false
+    private var landscape = false
 
     // All text-derived flags are coarse, ephemeral and never persisted.
     private var searchHint = false
@@ -151,6 +156,21 @@ object OrcaContextBrain {
         refresh(context)
     }
 
+    @Synchronized
+    fun onDeviceContext(
+        context: Context,
+        batteryPercent: Int? = null,
+        isCharging: Boolean? = null,
+        isPowerSave: Boolean? = null,
+        isLandscape: Boolean? = null
+    ) {
+        if (!active(context)) return
+        batteryPercent?.let { batteryFraction = it.coerceIn(0, 100) / 100f }
+        isCharging?.let { charging = it }
+        isPowerSave?.let { powerSave = it }
+        isLandscape?.let { landscape = it }
+        refresh(context)
+    }
     /** Clearing context on sensitive apps avoids stale reactions and data retention. */
     @Synchronized
     fun onSensitiveApp(context: Context) {
@@ -220,6 +240,9 @@ object OrcaContextBrain {
         val typing = editorFocused && recent(lastTypedAt, PAUSE_MS, time)
         val paused = editorFocused && lastTypedAt > 0L && !typing
         val mediaInForeground = musicPlaying && mediaPackage == currentPackage
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val isNight = hour in 0..5
+        val isDaytime = hour in 7..21
         return floatArrayOf(
             if (typing) 1f else 0f,                       // 0 typing recently
             if (paused) 1f else 0f,                       // 1 paused in editor
@@ -240,7 +263,13 @@ object OrcaContextBrain {
             if (successHint && recent(lastContextAt, 6_000L, time)) 1f else 0f, // 16 success
             if (recent(lastNotificationAt, ALERT_MS, time)) 1f else 0f, // 17 alert
             if (lastActivityAt > 0L && time - lastActivityAt > IDLE_MS) 1f else 0f, // 18 idle
-            if (!screenOn) 1f else 0f                     // 19 screen off
+            if (!screenOn) 1f else 0f,                    // 19 screen off
+            if (charging) 1f else 0f,                     // 20 charging
+            if (batteryFraction <= 0.15f) 1f else 0f,     // 21 low battery
+            if (powerSave) 1f else 0f,                    // 22 power saver
+            if (landscape) 1f else 0f,                    // 23 landscape
+            if (isNight) 1f else 0f,                      // 24 late night
+            if (isDaytime) 1f else 0f                     // 25 daytime
         )
     }
 
@@ -272,6 +301,7 @@ object OrcaContextBrain {
             features[16] == 1f -> OrcaIntent.SUCCESS
             features[5] == 1f && features[6] == 1f -> OrcaIntent.MUSIC
             features[5] == 1f && features[7] == 1f -> OrcaIntent.VIDEO
+            features[21] == 1f && features[22] == 1f && features[18] == 1f -> OrcaIntent.SLEEP
             features[18] == 1f -> OrcaIntent.IDLE
             prediction.confidence >= 0.42f -> prediction.intent
             features[9] == 1f -> OrcaIntent.CODING
