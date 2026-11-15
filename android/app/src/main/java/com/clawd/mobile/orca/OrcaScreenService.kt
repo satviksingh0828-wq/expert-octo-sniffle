@@ -28,6 +28,7 @@ class OrcaScreenService : AccessibilityService() {
         lastAt = now
         // In-app delivery: no Termux, HTTP endpoint, or external server required.
         OrcaModel.decide(applicationContext, pkg, context) { decision ->
+            OrcaLogStore.append(applicationContext, "Accessibility description received from $pkg; selected $decision")
             if (OrcaPrivacy.enabled(applicationContext)) OrcaPetController.react(applicationContext, decision)
         }
     }

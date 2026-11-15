@@ -1,21 +1,68 @@
 package com.clawd.mobile.orca
 
 /**
- * Offline fallback until a native GGUF inference engine is bundled.
- * This is rule-based, NOT Qwen or a trained AI model.
- * Screen text is processed in memory and is not persisted or transmitted.
+ * Built-in offline screen-description AI policy.
+ * It never calls an API and never needs a downloaded model. It classifies the
+ * sanitized description into a pet intent, then selects a packaged animation.
  */
 object OrcaActivityEngine {
+    private val happy = listOf("success", "succeeded", "congrat", "thank", "love", "great job", "complete", "completed")
+    private val error = listOf("error", "failed", "failure", "crash", "exception", "cannot", "couldn't", "something went wrong")
+    private val notification = listOf("notification", "new message", "message", "email", "alert", "mention", "reply")
+    private val typing = listOf("typing", "compose", "write", "editing", "editor", "draft", "keyboard")
+    private val building = listOf("build", "compile", "terminal", "gradle", "install", "deploy", "code", "debug")
+    private val conducting = listOf("music", "playing", "audio", "podcast", "song", "meeting")
+    private val juggling = listOf("search", "results", "list", "multiple", "tabs", "tasks", "queue")
+    private val thinking = listOf("loading", "searching", "thinking", "processing", "please wait", "waiting")
+    private val sleeping = listOf("sleep", "good night", "do not disturb", "screen off", "lock screen")
+
+    /** Every packaged Calico animation is allowlisted, including mini reactions. */
+    val animations: Set<String> = setOf(
+        "calico-collapsing.apng", "calico-dozing.apng", "calico-error.apng", "calico-happy.apng",
+        "calico-idle-follow.svg", "calico-idle.apng", "calico-mini-alert.apng", "calico-mini-crabwalk.apng",
+        "calico-mini-enter.apng", "calico-mini-happy.apng", "calico-mini-idle.apng", "calico-mini-peek.apng",
+        "calico-mini-sleep.apng", "calico-notification.apng", "calico-react-drag.apng", "calico-react-left.apng",
+        "calico-react-poke.apng", "calico-sleeping.apng", "calico-thinking.apng", "calico-waking.apng",
+        "calico-working-building.apng", "calico-working-carrying.apng", "calico-working-conducting.apng",
+        "calico-working-juggling.apng", "calico-working-sweeping.apng", "calico-working-typing.apng",
+        "calico-yawning.apng"
+    )
+
     fun decide(packageName: String, screenText: String): String {
-        val s = screenText.lowercase()
+        val text = "$packageName $screenText".lowercase()
         return when {
-            listOf("i love you", "love you", "congratulations", "thank you so much").any { it in s } -> "calico-happy.apng"
-            listOf("error", "failed", "something went wrong").any { it in s } -> "calico-error.apng"
-            listOf("new message", "notification").any { it in s } -> "calico-notification.apng"
-            listOf("typing", "compose", "write a message").any { it in s } -> "calico-working-typing.apng"
-            listOf("music", "playing now", "now playing").any { it in s } -> "calico-working-conducting.apng"
-            listOf("loading", "searching", "thinking").any { it in s } -> "calico-thinking.apng"
-            else -> "calico-idle.apng"
+            sleeping.any(text::contains) -> "calico-sleeping.apng"
+            error.any(text::contains) -> "calico-error.apng"
+            notification.any(text::contains) -> "calico-notification.apng"
+            happy.any(text::contains) -> "calico-happy.apng"
+            building.any(text::contains) -> "calico-working-building.apng"
+            typing.any(text::contains) -> "calico-working-typing.apng"
+            conducting.any(text::contains) -> "calico-working-conducting.apng"
+            juggling.any(text::contains) -> "calico-working-juggling.apng"
+            thinking.any(text::contains) -> "calico-thinking.apng"
+            else -> idleFor(text)
         }
     }
+
+    fun describe(animation: String): String = when (animation) {
+        "calico-error.apng" -> "error state"
+        "calico-notification.apng" -> "notification state"
+        "calico-happy.apng" -> "positive/success state"
+        "calico-working-building.apng" -> "coding/build state"
+        "calico-working-typing.apng" -> "typing/editing state"
+        "calico-working-conducting.apng" -> "audio/meeting state"
+        "calico-working-juggling.apng" -> "multiple tasks/results state"
+        "calico-thinking.apng" -> "loading/thinking state"
+        "calico-sleeping.apng" -> "sleep state"
+        else -> "idle state"
+    }
+
+    private fun idleFor(text: String): String = when (text.hashCode().absoluteValue % 4) {
+        0 -> "calico-idle-follow.svg"
+        1 -> "calico-idle.apng"
+        2 -> "calico-mini-peek.apng"
+        else -> "calico-mini-idle.apng"
+    }
+
+    private val Int.absoluteValue: Int get() = if (this == Int.MIN_VALUE) 0 else kotlin.math.abs(this)
 }

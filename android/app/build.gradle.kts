@@ -19,14 +19,7 @@ android {
         versionCode = 1008
         versionName = "0.12.0-orca"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        externalNativeBuild { cmake { cppFlags += "-std=c++17" } }
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
     }
-
-    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
-    ndkVersion = "27.2.12479018"
 
     signingConfigs {
         create("release") {
@@ -106,10 +99,6 @@ dependencies {
     implementation(libs.camera.lifecycle)
     implementation(libs.camera.view)
     implementation(libs.zxing.core)
-
-    // Bundled on-device OCR and image labeling. No remote inference service.
-    implementation("com.google.mlkit:text-recognition:16.0.1")
-    implementation("com.google.mlkit:image-labeling:17.0.9")
 
     // WebView asset loader (maps assets/ to https:// for fetch() in SVG WebView)
     implementation(libs.webkit)

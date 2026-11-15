@@ -19,9 +19,6 @@ import com.clawd.mobile.orca.OrcaPrivacy
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.provider.Settings
-import com.clawd.mobile.orca.OrcaModel
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import com.clawd.mobile.ui.components.ClawdIcons
 import com.clawd.mobile.ui.theme.*
 import com.clawd.mobile.ws.StreamingClient
@@ -72,21 +69,6 @@ fun SettingsScreen(
                     Switch(checked = monitoring, onCheckedChange = { monitoring = it; OrcaPrivacy.setEnabled(context, it) })
                 }
                 Text("Requires enabling ORCA under Android Accessibility settings. Screen text stays on-device; password fields are skipped. Pause here anytime.", modifier = Modifier.padding(horizontal = 12.dp), color = ClawdMutedDark)
-                var modelStatus by remember { mutableStateOf(if (OrcaModel.installed(context)) "Qwen model imported" else "Qwen model not imported") }
-                val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                    if (uri != null) {
-                        modelStatus = "Importing model into ORCA storage…"
-                        OrcaModel.importModel(context, uri) { ok ->
-                            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                modelStatus = if (ok) "Qwen model imported" else "Model import failed"
-                            }
-                        }
-                    }
-                }
-                Text(modelStatus, modifier = Modifier.padding(horizontal = 12.dp), color = ClawdMutedDark)
-                TextButton(onClick = { modelPicker.launch(arrayOf("application/octet-stream", "*/*")) }) {
-                    Text("Import local Qwen GGUF model")
-                }
                 TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) {
                     Text("Open Accessibility settings")
                 }

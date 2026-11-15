@@ -7,7 +7,6 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
@@ -44,10 +43,6 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="floating_window" />
         </service>
-        <service
-            android:name="com.clawd.mobile.orca.OrcaScreenCaptureService"
-            android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
         <service
             android:name="com.clawd.mobile.orca.OrcaScreenService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
