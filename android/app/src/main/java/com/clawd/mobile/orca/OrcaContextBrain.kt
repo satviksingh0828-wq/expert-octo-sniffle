@@ -8,39 +8,55 @@ import com.clawd.mobile.overlay.FloatingPetService
 import java.util.Calendar
 
 /**
- * Privacy-conscious, event-driven local context memory and animation director.
- * Input: foreground app class, UI events/timing, optional visible non-editable
- * context hints, actual media session playback and notification arrival.
- * Output: one classified PetIntent and corresponding packaged Calico asset.
+ * Privacy-conscious temporal context brain.
  *
- * No screenshots, screen text, chats, contacts, URLs or song titles are stored.
- * Raw text is reduced to booleans at the point of capture.
+ * Fuses coarse Android activity metadata, media state, device state, network,
+ * audio route and motion into a local neural prediction. Obvious states use
+ * deterministic priority; softer neural states use smoothing and hysteresis.
  */
 object OrcaContextBrain {
     private const val PAUSE_MS = 10_000L
     private const val ALERT_MS = 4_500L
     private const val SCROLL_MS = 3_500L
     private const val IDLE_MS = 90_000L
+    private const val SOFT_STABLE_MS = 1_200L
+    private const val SOFT_MIN_DWELL_MS = 2_400L
+    private const val APP_SWITCH_BURST_MS = 12_000L
+    private const val EMA_KEEP = 0.62f
 
     private val handler = Handler(Looper.getMainLooper())
     private val neural by lazy { OrcaNeuralNetwork() }
     private var restored = false
+    private var appContext: Context? = null
+
     private var currentPackage = ""
+    private var previousPackage = ""
     private var editorFocused = false
     private var lastTypedAt = 0L
     private var lastScrollAt = 0L
     private var lastTapAt = 0L
     private var lastNotificationAt = 0L
     private var lastActivityAt = 0L
+    private var lastAppSwitchAt = 0L
+    private var appSwitchBurst = 0
+
     private var musicPlaying = false
     private var mediaPackage = ""
     private var screenOn = true
+
     private var batteryFraction = 1f
     private var charging = false
     private var powerSave = false
     private var landscape = false
 
-    // All text-derived flags are coarse, ephemeral and never persisted.
+    private var networkConnected = false
+    private var wifi = false
+    private var cellular = false
+    private var wiredAudio = false
+    private var bluetoothAudio = false
+    private var moving = false
+    private var strongMotion = false
+
     private var searchHint = false
     private var videoHint = false
     private var readingHint = false
@@ -50,8 +66,14 @@ object OrcaContextBrain {
     private var lastContextAt = 0L
 
     private var lastIntent: OrcaIntent? = null
+    private var lastIntentAt = 0L
+    private var pendingIntent: OrcaIntent? = null
+    private var pendingIntentAt = 0L
     private var lastConfidence = 0f
+    private var lastMargin = 0f
     private var lastFeatures = FloatArray(OrcaNeuralNetwork.INPUTS)
+    private var smoothedProbabilities = FloatArray(OrcaNeuralNetwork.OUTPUTS)
+
     private val scheduledRefresh = Runnable { synchronized(this) { refreshInternal() } }
 
     @Synchronized
@@ -59,22 +81,29 @@ object OrcaContextBrain {
         if (restored) return
         restored = true
         val saved = context.getSharedPreferences("orca_brain", Context.MODE_PRIVATE)
-            .getString("weights_v1", null)
+            .getString("weights_v3_multisignal", null)
         if (saved != null && !neural.importWeights(saved)) {
-            OrcaLogStore.append(context, "Stored neural weights were invalid; using defaults")
+            OrcaLogStore.append(context, "Stored neural weights incompatible; using fresh multisignal model")
         }
     }
 
     @Synchronized
     fun onForeground(context: Context, pkg: String) {
-        if (!active(context)) return
-        if (pkg == currentPackage) return
+        if (!active(context) || pkg == currentPackage) return
+        val time = now()
+        previousPackage = currentPackage
+        if (previousPackage.isNotEmpty()) {
+            appSwitchBurst = if (recent(lastAppSwitchAt, APP_SWITCH_BURST_MS, time)) {
+                (appSwitchBurst + 1).coerceAtMost(8)
+            } else 1
+            lastAppSwitchAt = time
+        }
         currentPackage = pkg
         editorFocused = false
         lastTypedAt = 0L
         lastScrollAt = 0L
         lastTapAt = 0L
-        lastActivityAt = now()
+        lastActivityAt = time
         clearHints()
         refresh(context)
     }
@@ -142,7 +171,6 @@ object OrcaContextBrain {
     @Synchronized
     fun onPlayback(context: Context, sourcePackage: String, playing: Boolean) {
         if (!active(context)) return
-        // A background music session never overrides foreground typing or study.
         mediaPackage = sourcePackage
         musicPlaying = playing
         refresh(context)
@@ -171,62 +199,111 @@ object OrcaContextBrain {
         isLandscape?.let { landscape = it }
         refresh(context)
     }
-    /** Clearing context on sensitive apps avoids stale reactions and data retention. */
+
+    @Synchronized
+    fun onExtendedDeviceContext(
+        context: Context,
+        networkConnected: Boolean? = null,
+        wifi: Boolean? = null,
+        cellular: Boolean? = null,
+        wiredAudio: Boolean? = null,
+        bluetoothAudio: Boolean? = null,
+        moving: Boolean? = null,
+        strongMotion: Boolean? = null
+    ) {
+        if (!active(context)) return
+        networkConnected?.let { this.networkConnected = it }
+        wifi?.let { this.wifi = it }
+        cellular?.let { this.cellular = it }
+        wiredAudio?.let { this.wiredAudio = it }
+        bluetoothAudio?.let { this.bluetoothAudio = it }
+        moving?.let { this.moving = it }
+        strongMotion?.let { this.strongMotion = it }
+        refresh(context)
+    }
+
     @Synchronized
     fun onSensitiveApp(context: Context) {
         currentPackage = ""
+        previousPackage = ""
         editorFocused = false
         lastTypedAt = 0L
+        appSwitchBurst = 0
         clearHints()
+        pendingIntent = null
         handler.removeCallbacks(scheduledRefresh)
-        lastIntent = OrcaIntent.IDLE
-        if (active(context)) OrcaPetController.react(context, OrcaIntent.IDLE.animation)
+        applyIntent(context.applicationContext, OrcaIntent.IDLE, 1f, "privacy reset")
     }
 
     @Synchronized
     fun stop() {
         handler.removeCallbacks(scheduledRefresh)
         currentPackage = ""
+        previousPackage = ""
         editorFocused = false
         lastTypedAt = 0L
         musicPlaying = false
         mediaPackage = ""
+        pendingIntent = null
         lastIntent = null
+        lastIntentAt = 0L
         lastConfidence = 0f
+        lastMargin = 0f
+        appSwitchBurst = 0
         lastFeatures.fill(0f)
+        smoothedProbabilities.fill(0f)
         clearHints()
     }
 
-    /** UI correction trains the on-device MLP and saves ONLY numeric weights. */
     @Synchronized
     fun teach(context: Context, desired: OrcaIntent) {
         restore(context)
-        repeat(12) { neural.train(lastFeatures, desired, rate = 0.055f) }
+        repeat(16) { neural.train(lastFeatures, desired, rate = 0.045f) }
         context.getSharedPreferences("orca_brain", Context.MODE_PRIVATE).edit()
-            .putString("weights_v1", neural.exportWeights()).apply()
-        OrcaLogStore.append(context, "User corrected activity to ${desired.display}; local neural weights updated")
-        lastIntent = desired
-        if (active(context)) OrcaPetController.react(context, desired.animation)
+            .putString("weights_v3_multisignal", neural.exportWeights()).apply()
+        pendingIntent = null
+        applyIntent(context.applicationContext, desired, 1f, "user correction")
+        OrcaLogStore.append(context, "User taught ORCA: \${desired.display}; numeric weights updated locally")
     }
 
     @Synchronized
-    fun debugSummary(): String = "Activity: ${lastIntent?.display ?: "Waiting"} | " +
-        "Confidence: ${(lastConfidence * 100).toInt()}% | " +
-        "App: ${currentPackage.ifEmpty { "none" }} | Model: offline neural MLP"
+    fun debugSummary(): String {
+        val route = when {
+            bluetoothAudio -> "BT"
+            wiredAudio -> "wired"
+            else -> "speaker"
+        }
+        val net = when {
+            wifi -> "Wi-Fi"
+            cellular -> "cellular"
+            networkConnected -> "network"
+            else -> "offline"
+        }
+        val motion = if (strongMotion) "high" else if (moving) "moving" else "still"
+        return "Activity: \${lastIntent?.display ?: "Waiting"} | " +
+            "AI \${(lastConfidence * 100).toInt()}% Δ\${(lastMargin * 100).toInt()} | " +
+            "\$net | audio \$route | motion \$motion | " +
+            "battery \${(batteryFraction * 100).toInt()}%\${if (charging) "+" else ""}"
+    }
 
     private fun active(context: Context): Boolean =
         OrcaPrivacy.enabled(context) && FloatingPetService.isRunning
 
     private fun now(): Long = SystemClock.elapsedRealtime()
-    private fun recent(timestamp: Long, duration: Long, time: Long) =
+
+    private fun recent(timestamp: Long, duration: Long, time: Long): Boolean =
         timestamp > 0L && time - timestamp < duration
 
-    private fun has(text: String, vararg fragments: String) =
+    private fun has(text: String, vararg fragments: String): Boolean =
         fragments.any { text.contains(it) }
 
     private fun clearHints() {
-        searchHint = false; videoHint = false; readingHint = false
-        loadingHint = false; errorHint = false; successHint = false
+        searchHint = false
+        videoHint = false
+        readingHint = false
+        loadingHint = false
+        errorHint = false
+        successHint = false
         lastContextAt = 0L
     }
 
@@ -243,33 +320,43 @@ object OrcaContextBrain {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         val isNight = hour in 0..5
         val isDaytime = hour in 7..21
+        val rapidSwitching = appSwitchBurst >= 3 && recent(lastAppSwitchAt, APP_SWITCH_BURST_MS, time)
+
         return floatArrayOf(
-            if (typing) 1f else 0f,                       // 0 typing recently
-            if (paused) 1f else 0f,                       // 1 paused in editor
-            if (editorFocused) 1f else 0f,                // 2 editor focused
-            if (recent(lastScrollAt, SCROLL_MS, time)) 1f else 0f, // 3 scrolling
-            if (recent(lastTapAt, 2500L, time)) 1f else 0f,       // 4 tapping
-            if (mediaInForeground) 1f else 0f,           // 5 playing media
-            if (musicApp) 1f else 0f,                    // 6 music app
-            if (videoApp) 1f else 0f,                    // 7 video app
-            if (browser) 1f else 0f,                     // 8 browser
-            if (codingApp) 1f else 0f,                   // 9 coding app
-            if (messagingApp) 1f else 0f,                // 10 messaging
-            if (searchHint) 1f else 0f,                  // 11 search
-            if (videoHint) 1f else 0f,                   // 12 video content
-            if (readingHint) 1f else 0f,                 // 13 reading
-            if (loadingHint) 1f else 0f,                 // 14 loading
-            if (errorHint && recent(lastContextAt, 6_000L, time)) 1f else 0f, // 15 error
-            if (successHint && recent(lastContextAt, 6_000L, time)) 1f else 0f, // 16 success
-            if (recent(lastNotificationAt, ALERT_MS, time)) 1f else 0f, // 17 alert
-            if (lastActivityAt > 0L && time - lastActivityAt > IDLE_MS) 1f else 0f, // 18 idle
-            if (!screenOn) 1f else 0f,                    // 19 screen off
-            if (charging) 1f else 0f,                     // 20 charging
-            if (batteryFraction <= 0.15f) 1f else 0f,     // 21 low battery
-            if (powerSave) 1f else 0f,                    // 22 power saver
-            if (landscape) 1f else 0f,                    // 23 landscape
-            if (isNight) 1f else 0f,                      // 24 late night
-            if (isDaytime) 1f else 0f                     // 25 daytime
+            if (typing) 1f else 0f,
+            if (paused) 1f else 0f,
+            if (editorFocused) 1f else 0f,
+            if (recent(lastScrollAt, SCROLL_MS, time)) 1f else 0f,
+            if (recent(lastTapAt, 2500L, time)) 1f else 0f,
+            if (mediaInForeground) 1f else 0f,
+            if (musicApp) 1f else 0f,
+            if (videoApp) 1f else 0f,
+            if (browser) 1f else 0f,
+            if (codingApp) 1f else 0f,
+            if (messagingApp) 1f else 0f,
+            if (searchHint) 1f else 0f,
+            if (videoHint) 1f else 0f,
+            if (readingHint) 1f else 0f,
+            if (loadingHint) 1f else 0f,
+            if (errorHint && recent(lastContextAt, 6_000L, time)) 1f else 0f,
+            if (successHint && recent(lastContextAt, 6_000L, time)) 1f else 0f,
+            if (recent(lastNotificationAt, ALERT_MS, time)) 1f else 0f,
+            if (lastActivityAt > 0L && time - lastActivityAt > IDLE_MS) 1f else 0f,
+            if (!screenOn) 1f else 0f,
+            if (charging) 1f else 0f,
+            if (batteryFraction <= 0.15f) 1f else 0f,
+            if (powerSave) 1f else 0f,
+            if (landscape) 1f else 0f,
+            if (isNight) 1f else 0f,
+            if (isDaytime) 1f else 0f,
+            if (networkConnected) 1f else 0f,
+            if (wifi) 1f else 0f,
+            if (cellular) 1f else 0f,
+            if (wiredAudio) 1f else 0f,
+            if (bluetoothAudio) 1f else 0f,
+            if (moving) 1f else 0f,
+            if (strongMotion) 1f else 0f,
+            if (rapidSwitching) 1f else 0f
         )
     }
 
@@ -278,55 +365,145 @@ object OrcaContextBrain {
         refreshInternal(context)
     }
 
-    /** A single state arbiter; stable event priorities override uncertain MLP guesses. */
     private fun refreshInternal(context: Context? = null) {
-        // Timer fires without a Context; keep a safe application Context only.
         val app = context?.applicationContext ?: appContext ?: return
         appContext = app
         if (!active(app)) {
             handler.removeCallbacks(scheduledRefresh)
             return
         }
+
         val time = now()
         val features = featureVector(time)
         lastFeatures = features.copyOf()
-        val prediction = neural.predict(features)
-        lastConfidence = prediction.confidence
-        val chosen = when {
-            !screenOn -> OrcaIntent.SLEEP
-            features[0] == 1f -> OrcaIntent.TYPING
-            features[1] == 1f -> OrcaIntent.THINKING
-            features[17] == 1f -> OrcaIntent.NOTIFICATION
-            features[15] == 1f -> OrcaIntent.ERROR
-            features[16] == 1f -> OrcaIntent.SUCCESS
-            features[5] == 1f && features[6] == 1f -> OrcaIntent.MUSIC
-            features[5] == 1f && features[7] == 1f -> OrcaIntent.VIDEO
-            features[21] == 1f && features[22] == 1f && features[18] == 1f -> OrcaIntent.SLEEP
-            features[18] == 1f -> OrcaIntent.IDLE
-            prediction.confidence >= 0.42f -> prediction.intent
-            features[9] == 1f -> OrcaIntent.CODING
-            features[13] == 1f -> OrcaIntent.READING
-            features[8] == 1f -> OrcaIntent.BROWSING
-            else -> OrcaIntent.IDLE
+        val rawPrediction = neural.predict(features)
+        updateSmoothedProbabilities(rawPrediction.probabilities)
+
+        val ranked = smoothedProbabilities.indices.sortedByDescending { smoothedProbabilities[it] }
+        val bestIndex = ranked.firstOrNull() ?: OrcaIntent.IDLE.ordinal
+        val secondIndex = ranked.getOrNull(1) ?: bestIndex
+        val neuralIntent = OrcaIntent.entries[bestIndex]
+        val neuralConfidence = smoothedProbabilities[bestIndex]
+        val margin = (neuralConfidence - smoothedProbabilities[secondIndex]).coerceAtLeast(0f)
+        lastConfidence = neuralConfidence
+        lastMargin = margin
+
+        val hard = hardIntent(features)
+        val proposed = hard ?: fallbackIntent(features, neuralIntent, neuralConfidence, margin)
+        val chosen = if (hard != null) {
+            pendingIntent = null
+            proposed
+        } else {
+            stabilizeSoftIntent(proposed, neuralConfidence, time)
         }
-        if (lastIntent != chosen) {
-            lastIntent = chosen
-            OrcaPetController.react(app, chosen.animation)
-            OrcaLogStore.append(app, "Brain: ${chosen.display} | neural ${prediction.intent.display} " +
-                "(${(prediction.confidence * 100).toInt()}%) | app ${currentPackage.take(64)}")
+
+        if (chosen != null && chosen != lastIntent) {
+            applyIntent(
+                app,
+                chosen,
+                if (hard != null) 1f else neuralConfidence,
+                if (hard != null) "hard signal" else "temporal neural"
+            )
         }
-        // Single next-deadline timer; no permanent polling or screen reads.
-        handler.removeCallbacks(scheduledRefresh)
-        val deadlines = listOfNotNull(
-            lastTypedAt.takeIf { editorFocused && recent(it, PAUSE_MS, time) }?.plus(PAUSE_MS),
-            lastNotificationAt.takeIf { recent(it, ALERT_MS, time) }?.plus(ALERT_MS),
-            lastScrollAt.takeIf { recent(it, SCROLL_MS, time) }?.plus(SCROLL_MS),
-            lastTapAt.takeIf { recent(it, 2500L, time) }?.plus(2500L),
-            lastContextAt.takeIf { (errorHint || successHint) && recent(it, 6000L, time) }?.plus(6000L),
-            lastActivityAt.takeIf { it > 0L && time - it <= IDLE_MS }?.plus(IDLE_MS + 1L)
-        )
-        deadlines.minOrNull()?.let { handler.postDelayed(scheduledRefresh, (it - time + 5L).coerceAtLeast(10L)) }
+        scheduleNext(time)
     }
 
-    private var appContext: Context? = null
+    private fun updateSmoothedProbabilities(raw: FloatArray) {
+        if (smoothedProbabilities.all { it == 0f }) {
+            for (i in raw.indices) smoothedProbabilities[i] = raw[i]
+            return
+        }
+        for (i in raw.indices) {
+            smoothedProbabilities[i] =
+                smoothedProbabilities[i] * EMA_KEEP + raw[i] * (1f - EMA_KEEP)
+        }
+    }
+
+    private fun hardIntent(features: FloatArray): OrcaIntent? = when {
+        !screenOn -> OrcaIntent.SLEEP
+        features[0] == 1f -> OrcaIntent.TYPING
+        features[1] == 1f -> OrcaIntent.THINKING
+        features[17] == 1f -> OrcaIntent.NOTIFICATION
+        features[15] == 1f -> OrcaIntent.ERROR
+        features[16] == 1f -> OrcaIntent.SUCCESS
+        features[5] == 1f && features[6] == 1f -> OrcaIntent.MUSIC
+        features[5] == 1f && features[7] == 1f -> OrcaIntent.VIDEO
+        features[21] == 1f && features[22] == 1f && features[18] == 1f -> OrcaIntent.SLEEP
+        else -> null
+    }
+
+    private fun fallbackIntent(
+        features: FloatArray,
+        neuralIntent: OrcaIntent,
+        confidence: Float,
+        margin: Float
+    ): OrcaIntent = when {
+        features[18] == 1f -> OrcaIntent.IDLE
+        confidence >= 0.48f && margin >= 0.08f -> neuralIntent
+        features[9] == 1f -> OrcaIntent.CODING
+        features[13] == 1f -> OrcaIntent.READING
+        features[8] == 1f && features[26] == 1f -> OrcaIntent.BROWSING
+        features[7] == 1f && features[23] == 1f -> OrcaIntent.VIDEO
+        else -> OrcaIntent.IDLE
+    }
+
+    private fun stabilizeSoftIntent(
+        proposed: OrcaIntent,
+        confidence: Float,
+        time: Long
+    ): OrcaIntent? {
+        if (proposed == lastIntent) {
+            pendingIntent = null
+            return proposed
+        }
+        if (lastIntent == null) return proposed
+
+        if (time - lastIntentAt < SOFT_MIN_DWELL_MS && confidence < 0.78f) {
+            setPending(proposed, time)
+            return null
+        }
+        if (pendingIntent != proposed) {
+            setPending(proposed, time)
+            return null
+        }
+        return if (time - pendingIntentAt >= SOFT_STABLE_MS) {
+            pendingIntent = null
+            proposed
+        } else null
+    }
+
+    private fun setPending(intent: OrcaIntent, time: Long) {
+        if (pendingIntent != intent) {
+            pendingIntent = intent
+            pendingIntentAt = time
+        }
+    }
+
+    private fun applyIntent(context: Context, intent: OrcaIntent, confidence: Float, reason: String) {
+        lastIntent = intent
+        lastIntentAt = now()
+        OrcaPetController.react(context, intent.animation)
+        OrcaLogStore.append(
+            context,
+            "Brain: \${intent.display} | \$reason | confidence \${(confidence * 100).toInt()}% | app \${currentPackage.take(64)}"
+        )
+    }
+
+    private fun scheduleNext(time: Long) {
+        handler.removeCallbacks(scheduledRefresh)
+        val deadlines = mutableListOf<Long>()
+        if (editorFocused && recent(lastTypedAt, PAUSE_MS, time)) deadlines += lastTypedAt + PAUSE_MS
+        if (recent(lastNotificationAt, ALERT_MS, time)) deadlines += lastNotificationAt + ALERT_MS
+        if (recent(lastScrollAt, SCROLL_MS, time)) deadlines += lastScrollAt + SCROLL_MS
+        if (recent(lastTapAt, 2_500L, time)) deadlines += lastTapAt + 2_500L
+        if ((errorHint || successHint) && recent(lastContextAt, 6_000L, time)) deadlines += lastContextAt + 6_000L
+        if (lastActivityAt > 0L && time - lastActivityAt <= IDLE_MS) deadlines += lastActivityAt + IDLE_MS + 1L
+        if (pendingIntent != null) deadlines += pendingIntentAt + SOFT_STABLE_MS
+        if (appSwitchBurst > 0 && recent(lastAppSwitchAt, APP_SWITCH_BURST_MS, time)) {
+            deadlines += lastAppSwitchAt + APP_SWITCH_BURST_MS
+        }
+        deadlines.minOrNull()?.let {
+            handler.postDelayed(scheduledRefresh, (it - time + 5L).coerceAtLeast(10L))
+        }
+    }
 }
