@@ -425,6 +425,8 @@ class FloatingPetService : Service() {
         broadcastReceiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
                 when (intent.action) {
+                    Intent.ACTION_SCREEN_OFF -> com.clawd.mobile.orca.OrcaContextBrain.onScreen(applicationContext, false)
+                    Intent.ACTION_SCREEN_ON -> com.clawd.mobile.orca.OrcaContextBrain.onScreen(applicationContext, true)
                     ACTION_PET_SIZE -> {
                         sizeDp = intent.getIntExtra(EXTRA_SIZE_DP, DEFAULT_SIZE_DP)
                         updateSize()
@@ -447,6 +449,8 @@ class FloatingPetService : Service() {
             }
         }
         val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
             addAction(ACTION_PET_SIZE)
             addAction(ACTION_PET_CHARACTER)
             addAction(ACTION_PET_RECENTER)
