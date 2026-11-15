@@ -30,3 +30,12 @@ The model uses only coarse features. Heuristic guards are deliberate because inc
 
 ## Device context inputs
 Battery percentage is reduced to coarse normalized state, charging/power-save are booleans, orientation is portrait/landscape, and time-of-day is a coarse local bucket. These signals are event-driven where Android exposes broadcasts; ORCA does not poll them continuously.
+
+
+## Multisignal temporal brain (0.14)
+
+ORCA now fuses 34 coarse inputs into a 34→32→12 local neural classifier. New signals include network availability/transport, wired or Bluetooth audio route, coarse accelerometer motion, and rapid app-switching context. The monitor does not keep SSIDs, Bluetooth names/addresses, location, microphone audio, or raw sensor history.
+
+The output layer now uses exponential probability smoothing plus hysteresis. Hard signals such as typing, typing-pause, notification, error/success, foreground media and screen-off react immediately. Softer neural guesses must remain stable before switching animations, reducing flicker when several weak signals change together.
+
+The signal monitor is lifecycle-bound to the floating pet service and unregisters network, audio and sensor callbacks when ORCA stops.
