@@ -62,6 +62,7 @@ class FloatingPetService : Service() {
     private var commandCollectorJob: Job? = null
     private var localReactionJob: Job? = null
     private var localReactionUntil = 0L
+    private var pendingLocalAnimation: String? = null
 
     // --- State management ---
     private lateinit var stateManager: PetStateManager
@@ -109,15 +110,17 @@ class FloatingPetService : Service() {
             val animation = intent.getStringExtra(EXTRA_ORCA_ANIMATION) ?: return START_STICKY
             if (character == "calico" && animation in com.clawd.mobile.orca.OrcaPetController.animations) {
                 localReactionJob?.cancel()
-                val duration = if (animation == "calico-idle.apng") 0L else 5500L
-                localReactionUntil = SystemClock.uptimeMillis() + duration
-                petView?.let { SvgLoader.loadSvg(it, "svg/calico/$animation", loop = true) }
-                if (duration > 0) {
-                    localReactionJob = scope.launch {
-                        kotlinx.coroutines.delay(duration)
-                        localReactionUntil = 0L
-                        petView?.let { SvgLoader.loadSvg(it, "svg/calico/calico-idle.apng", loop = true) }
-                    }
+                // ORCA owns the Calico state. Keep the selected animation visible
+                // until the next screen-description decision instead of reverting
+                // to idle after a short timer.
+                localReactionUntil = Long.MAX_VALUE
+                val view = petView
+                if (view == null) {
+                    pendingLocalAnimation = animation
+                    com.clawd.mobile.orca.OrcaLogStore.append(this, "Queued pet animation until overlay is ready: $animation")
+                } else {
+                    SvgLoader.loadSvg(view, "svg/calico/$animation", loop = true)
+                    com.clawd.mobile.orca.OrcaLogStore.append(this, "Service applied pet animation: $animation")
                 }
             }
             return START_STICKY
@@ -392,6 +395,16 @@ class FloatingPetService : Service() {
 
         windowManager?.addView(petView!!, layoutParams)
         petView!!.post { petView!!.cacheHitTestBitmap() }
+        pendingLocalAnimation?.let { animation ->
+            pendingLocalAnimation = null
+            petView!!.post {
+                if (animation in com.clawd.mobile.orca.OrcaPetController.animations) {
+                    localReactionUntil = Long.MAX_VALUE
+                    SvgLoader.loadSvg(petView!!, "svg/calico/$animation", loop = true)
+                    com.clawd.mobile.orca.OrcaLogStore.append(this, "Service applied queued pet animation: $animation")
+                }
+            }
+        }
         Log.d(TAG, "Pet view added at x=$savedX, y=$savedY, size=$sizePx")
     }
 
