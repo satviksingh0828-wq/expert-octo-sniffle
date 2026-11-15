@@ -359,18 +359,23 @@ object SvgLoader {
         val url = "$SVG_BASE/${assetPath.removePrefix("svg/")}"
         val isApng = assetPath.endsWith(".apng")
 
+        // Calls can arrive before the first page finishes loading. Repeatedly
+        // navigating the WebView here discards pending animations, while logging
+        // them as applied. Keep only the newest request until the shell is ready.
+        if (view != null && view.isPageLoading && !view.isPageLoaded) {
+            view.queuedAssetRequest = assetPath to loop
+            Log.d(TAG, "Queued newest animation while WebView loads: $assetPath")
+            return
+        }
+        view?.currentAssetPath = assetPath
         if (view != null && view.isPageLoaded) {
-            // ── Hot-swap path: in-place JS update, zero flicker ──
             swapSvg(view, url, isApng)
         } else {
-            // ── First load: full HTML page ──
-            val loopStyle = if (loop) "" else "animation-iteration-count: 1;"
-            val templateName = if (isApng) "apng_template.html" else "svg_template.html"
-            val html = loadTemplate(webView.context, templateName)
+            view?.isPageLoading = true
+            // Single mixed-format renderer: APNG <img> and inline SVG can
+            // replace each other without reloading the WebView.
+            val html = loadTemplate(webView.context, "pet_template.html")
                 .replace("{{URL}}", url)
-                .replace("{{LOOP_STYLE}}", loopStyle)
-                .replace("{{ANIM_END_SCRIPT}}", "")
-
             webView.loadDataWithBaseURL(
                 "https://appassets.androidplatform.net/",
                 html,
@@ -396,8 +401,13 @@ object SvgLoader {
      * Clear the WebView content.
      */
     fun clearSvg(webView: WebView) {
+        (webView as? FloatingPetView)?.apply {
+            isPageLoaded = false
+            isPageLoading = false
+            queuedAssetRequest = null
+            currentAssetPath = null
+        }
         webView.loadUrl("about:blank")
-        (webView as? FloatingPetView)?.isPageLoaded = false
     }
 
     // ======================================================================
@@ -409,31 +419,13 @@ object SvgLoader {
      * The JS function fetches, sanitizes, and replaces content without page reload.
      */
     private fun swapSvg(view: FloatingPetView, url: String, isApng: Boolean) {
-        // Inject JS callback for dimension reading after swap completes
-        val callbackJs = """
-            window.onSvgLoaded = function() {
-                var c = document.querySelector('.container');
-                var el = c ? (${ if (isApng) "'img'" else "'svg'" }) ? c.querySelector('img') : c.querySelector('svg') : null;
-                if (!el) return;
-                var w = window._svgWidth || 0, h = window._svgHeight || 0;
-                if (w > 0 && h > 0) {
-                    // Signal native side to read dimensions and cache hit-test bitmap
-                    // Use a temporary bridge: poll from Kotlin side
-                }
-            };
-        """.trimIndent()
-        // Note: We don't actually need to inject the callback — the template's
-        // readSvgMeta / onload already calls window.onSvgLoaded if defined.
-        // The dimension reading is triggered by onPageFinished polling, which
-        // works for both paths since _svgWidth/_svgHeight are updated by the JS.
-
-        val escapedUrl = url.replace("'", "\\'")
-        view.evaluateJavascript("window.updatePetSvg('$escapedUrl');", null)
-
-        // After hot-swap, re-read dimensions and cache hit-test bitmap.
-        // The JS updatePetSvg sets _svgWidth/_svgHeight asynchronously (on XHR load),
-        // so we poll with a short delay — same pattern as onPageFinished.
-        view.postDelayed({ view.readDimensionsAndCacheBitmap() }, 150)
+        // One template implements both formats; no special-case JS callback
+        // that depends on the format of the *previous* asset.
+        val quotedUrl = kotlinx.serialization.json.JsonPrimitive(url).toString()
+        view.evaluateJavascript("window.updatePetSvg($quotedUrl);", null)
+        // The template finishes image decoding or SVG parsing asynchronously.
+        view.postDelayed({ view.readDimensionsAndCacheBitmap() }, 180)
+        Log.d(TAG, "Hot-swapped ${if (isApng) "APNG" else "SVG"}: $url")
     }
 
     // ======================================================================
