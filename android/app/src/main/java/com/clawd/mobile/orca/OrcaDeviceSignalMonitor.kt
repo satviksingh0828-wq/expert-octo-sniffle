@@ -33,6 +33,9 @@ class OrcaDeviceSignalMonitor(private val context: Context) : SensorEventListene
     private var accel: Sensor? = null
     private var lastMotionDispatchAt = 0L
     private var motionEma = 0f
+    private var screenActive = true
+    private var batterySaver = false
+    private var sensorRegistered = false
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = dispatchNetwork()
@@ -60,10 +63,7 @@ class OrcaDeviceSignalMonitor(private val context: Context) : SensorEventListene
         } catch (_: Exception) { }
 
         accel = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        accel?.let {
-            // SENSOR_DELAY_NORMAL is enough for coarse "moving vs still" context.
-            sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL, handler)
-        }
+        updateSensorRegistration()
 
         dispatchNetwork()
         dispatchAudio()
@@ -76,6 +76,33 @@ class OrcaDeviceSignalMonitor(private val context: Context) : SensorEventListene
         try { connectivity.unregisterNetworkCallback(networkCallback) } catch (_: Exception) { }
         try { audio.unregisterAudioDeviceCallback(audioCallback) } catch (_: Exception) { }
         sensors.unregisterListener(this)
+        sensorRegistered = false
+        resetMotion()
+    }
+
+    /** Event-driven sampling policy; no accelerometer use with screen off or battery saver. */
+    fun setSamplingPolicy(screenOn: Boolean? = null, powerSave: Boolean? = null) {
+        screenOn?.let { screenActive = it }
+        powerSave?.let { batterySaver = it }
+        updateSensorRegistration()
+    }
+
+    private fun updateSensorRegistration() {
+        val wanted = registered && screenActive && !batterySaver && accel != null
+        if (wanted == sensorRegistered) return
+        if (wanted) {
+            sensorRegistered = sensors.registerListener(this, accel, SensorManager.SENSOR_DELAY_NORMAL, handler)
+        } else {
+            sensors.unregisterListener(this)
+            sensorRegistered = false
+            resetMotion()
+        }
+    }
+
+    private fun resetMotion() {
+        motionEma = 0f
+        lastMotionDispatchAt = 0L
+        OrcaContextBrain.onExtendedDeviceContext(app, moving = false, strongMotion = false)
     }
 
     private fun dispatchNetwork(caps: NetworkCapabilities? = null) {
@@ -111,7 +138,7 @@ class OrcaDeviceSignalMonitor(private val context: Context) : SensorEventListene
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        if (!registered || event?.sensor?.type != Sensor.TYPE_ACCELEROMETER) return
+        if (!registered || !sensorRegistered || event?.sensor?.type != Sensor.TYPE_ACCELEROMETER) return
         val values = event.values
         if (values.size < 3) return
         val magnitude = sqrt(values[0] * values[0] + values[1] * values[1] + values[2] * values[2])
