@@ -280,10 +280,13 @@ object OrcaContextBrain {
             else -> "offline"
         }
         val motion = if (strongMotion) "high" else if (moving) "moving" else "still"
-        return "Activity: ${lastIntent?.display ?: "Waiting"} | " +
-            "AI ${(lastConfidence * 100).toInt()}% Δ${(lastMargin * 100).toInt()} | " +
-            "$net | audio $route | motion $motion | " +
-            "battery ${(batteryFraction * 100).toInt()}%${if (charging) "+" else ""}"
+        val activity = lastIntent?.display ?: "Waiting"
+        val confidencePercent = (lastConfidence * 100).toInt()
+        val marginPercent = (lastMargin * 100).toInt()
+        val batteryPercent = (batteryFraction * 100).toInt()
+        val chargeMark = if (charging) "+" else ""
+        return "Activity: $activity | AI $confidencePercent% margin $marginPercent% | " +
+            "$net | audio $route | motion $motion | battery $batteryPercent%$chargeMark"
     }
 
     private fun active(context: Context): Boolean =
