@@ -34,6 +34,9 @@ class OrcaDeviceSignalMonitor(private val context: Context) : SensorEventListene
     private var lastMotionDispatchAt = 0L
     private var motionEma = 0f
     private var screenActive = true
+    private var powerSave = false
+    private var sensorRegistered = false
+    private var screenActive = true
     private var batterySaver = false
     private var sensorRegistered = false
 
