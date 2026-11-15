@@ -511,6 +511,7 @@ class FloatingPetService : Service() {
             status == BatteryManager.BATTERY_STATUS_FULL
         val powerSave = (getSystemService(POWER_SERVICE) as? PowerManager)?.isPowerSaveMode ?: false
         deviceSignalMonitor?.setSamplingPolicy(powerSave = powerSave)
+        deviceSignalMonitor?.setSamplingPolicy(batterySaver = powerSave)
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         com.clawd.mobile.orca.OrcaContextBrain.onDeviceContext(
             applicationContext,
