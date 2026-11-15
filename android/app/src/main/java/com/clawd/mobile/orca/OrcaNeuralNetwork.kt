@@ -10,14 +10,14 @@ import kotlin.math.tanh
 /**
  * Small, real, fully offline feed-forward neural network.
  *
- * 20 normalized context signals -> 24 tanh neurons -> 12 softmax intent probabilities.
+ * 26 normalized context signals -> 24 tanh neurons -> 12 softmax intent probabilities.
  * Bootstrap training uses synthetic activity *metadata* examples, not personal screen
  * content. Optional user corrections are trained with gradient descent and persisted.
  * This is an activity classifier, not a language/vision model.
  */
 class OrcaNeuralNetwork {
     companion object {
-        const val INPUTS = 20
+        const val INPUTS = 26
         private const val HIDDEN = 24
         const val OUTPUTS = 12
     }
@@ -112,8 +112,8 @@ class OrcaNeuralNetwork {
                 OrcaIntent.NOTIFICATION -> x[17] = 1f
                 OrcaIntent.SUCCESS -> x[16] = 1f
                 OrcaIntent.ERROR -> x[15] = 1f
-                OrcaIntent.SLEEP -> { x[19] = 1f; x[18] = 1f }
-                OrcaIntent.IDLE -> { x.fill(0f); if (rng.nextBoolean()) x[18] = 1f }
+                OrcaIntent.SLEEP -> { x[19] = 1f; x[18] = 1f; if (rng.nextBoolean()) x[21] = 1f; if (rng.nextBoolean()) x[22] = 1f; if (rng.nextBoolean()) x[24] = 1f }
+                OrcaIntent.IDLE -> { x.fill(0f); if (rng.nextBoolean()) x[18] = 1f; if (rng.nextBoolean()) x[20] = 1f; if (rng.nextBoolean()) x[25] = 1f }
             }
             train(x, label, 0.07f)
         }
