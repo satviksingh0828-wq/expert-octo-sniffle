@@ -296,6 +296,12 @@ object OrcaContextBrain {
     }
 
     @Synchronized
+    fun resetPersonalization(context: Context) {
+        behaviorMemory.clear(context.applicationContext)
+        OrcaLogStore.append(context, "Personalized habit memory reset by user")
+    }
+
+    @Synchronized
     fun debugSummary(): String {
         val route = when {
             bluetoothAudio -> "BT"
