@@ -263,7 +263,7 @@ object OrcaContextBrain {
             .putString("weights_v3_multisignal", neural.exportWeights()).apply()
         pendingIntent = null
         applyIntent(context.applicationContext, desired, 1f, "user correction")
-        OrcaLogStore.append(context, "User taught ORCA: \${desired.display}; numeric weights updated locally")
+        OrcaLogStore.append(context, "User taught ORCA: ${desired.display}; numeric weights updated locally")
     }
 
     @Synchronized
@@ -280,10 +280,10 @@ object OrcaContextBrain {
             else -> "offline"
         }
         val motion = if (strongMotion) "high" else if (moving) "moving" else "still"
-        return "Activity: \${lastIntent?.display ?: "Waiting"} | " +
-            "AI \${(lastConfidence * 100).toInt()}% Δ\${(lastMargin * 100).toInt()} | " +
-            "\$net | audio \$route | motion \$motion | " +
-            "battery \${(batteryFraction * 100).toInt()}%\${if (charging) "+" else ""}"
+        return "Activity: ${lastIntent?.display ?: "Waiting"} | " +
+            "AI ${(lastConfidence * 100).toInt()}% Δ${(lastMargin * 100).toInt()} | " +
+            "$net | audio $route | motion $motion | " +
+            "battery ${(batteryFraction * 100).toInt()}%${if (charging) "+" else ""}"
     }
 
     private fun active(context: Context): Boolean =
@@ -485,7 +485,7 @@ object OrcaContextBrain {
         OrcaPetController.react(context, intent.animation)
         OrcaLogStore.append(
             context,
-            "Brain: \${intent.display} | \$reason | confidence \${(confidence * 100).toInt()}% | app \${currentPackage.take(64)}"
+            "Brain: ${intent.display} | $reason | confidence ${(confidence * 100).toInt()}% | app ${currentPackage.take(64)}"
         )
     }
 
