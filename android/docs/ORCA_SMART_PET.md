@@ -39,3 +39,14 @@ ORCA now fuses 34 coarse inputs into a 34→32→12 local neural classifier. New
 The output layer now uses exponential probability smoothing plus hysteresis. Hard signals such as typing, typing-pause, notification, error/success, foreground media and screen-off react immediately. Softer neural guesses must remain stable before switching animations, reducing flicker when several weak signals change together.
 
 The signal monitor is lifecycle-bound to the floating pet service and unregisters network, audio and sensor callbacks when ORCA stops.
+
+
+## Personalized system brain (0.16)
+
+ORCA now keeps a bounded, privacy-preserving long-term habit memory. It learns only coarse app categories (browser, coding, music, video, messaging, other), broad time-of-day buckets, and weekday/weekend context. It stores intent counters rather than raw package contents, screen text, URLs, message bodies, or sensor history.
+
+Personalization is fused into soft neural decisions as a capped prior, never more than 24% of the soft evidence. Clear real-time states such as typing, thinking-after-pause, media playback, notifications, screen-off and other hard signals remain higher priority. High-confidence observations gradually update the memory; explicit Teach ORCA feedback has stronger weight.
+
+A new system-state monitor adds Android device-idle/Doze, interactive/user-present state and thermal pressure. Device idle or non-interactive state causes sleep immediately. Severe thermal pressure biases idle behavior toward sleep. Long sessions (90+ minutes) that become idle also rest instead of remaining indefinitely active.
+
+The ORCA screen now includes **Reset learned habits**, which clears the persistent personalization counters. The signal monitors remain event-driven and unregister when the floating pet service stops.
