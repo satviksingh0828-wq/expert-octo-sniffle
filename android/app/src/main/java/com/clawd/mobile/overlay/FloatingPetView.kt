@@ -43,6 +43,10 @@ class FloatingPetView @JvmOverloads constructor(
 
     /** Whether the HTML page has finished loading (onPageFinished fired). */
     var isPageLoaded: Boolean = false
+    /** Startup navigation is in flight; do not navigate again for every event. */
+    var isPageLoading: Boolean = false
+    /** Only the latest animation requested while the renderer loads is relevant. */
+    var queuedAssetRequest: Pair<String, Boolean>? = null
         internal set
 
     /** Currently loaded asset path (e.g. "svg/clawd/clawd-idle-follow.svg"). */
@@ -201,8 +205,15 @@ class FloatingPetView @JvmOverloads constructor(
                 // and cause subsequent loadSvg to use hot-swap on an empty page.
                 if (url == "about:blank") return
 
-                // Mark page as loaded — all subsequent SVG changes use hot-swap JS
+                // Mark shell ready and immediately honor the latest queued request.
                 isPageLoaded = true
+                isPageLoading = false
+                val queued = queuedAssetRequest
+                queuedAssetRequest = null
+                if (queued != null) {
+                    SvgLoader.loadSvg(this@FloatingPetView, queued.first, queued.second)
+                    return
+                }
 
                 // Initial dimension read after first page load.
                 // The template's XHR sets _svgWidth/_svgHeight; poll briefly for it.
@@ -244,6 +255,8 @@ class FloatingPetView @JvmOverloads constructor(
     fun clearSvg() {
         currentAssetPath = null
         isPageLoaded = false
+        isPageLoading = false
+        queuedAssetRequest = null
         hitTestBitmap?.recycle()
         hitTestBitmap = null
         SvgLoader.clearSvg(this)
