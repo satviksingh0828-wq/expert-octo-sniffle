@@ -104,6 +104,13 @@ class OrcaBehaviorMemory {
             .apply()
     }
 
+    fun clear(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .apply()
+    }
+
     fun summary(context: Context, key: ContextKey): String {
         val prior = prior(context, key)
         if (prior.samples == 0) return "personalization new"
