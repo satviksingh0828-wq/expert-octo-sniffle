@@ -42,6 +42,7 @@ object OrcaContextBrain {
     private var loadingHint = false
     private var errorHint = false
     private var successHint = false
+    private var lastContextAt = 0L
 
     private var lastIntent: OrcaIntent? = null
     private var lastConfidence = 0f
@@ -122,6 +123,7 @@ object OrcaContextBrain {
         loadingHint = has(text, "loading", "processing", "please wait", "connecting", "compiling")
         errorHint = has(text, "error", "failed", "exception", "crashed", "something went wrong")
         successHint = has(text, "completed", "successfully", "congratulations", "task complete")
+        lastContextAt = now()
         refresh(context)
     }
 
@@ -205,6 +207,7 @@ object OrcaContextBrain {
     private fun clearHints() {
         searchHint = false; videoHint = false; readingHint = false
         loadingHint = false; errorHint = false; successHint = false
+        lastContextAt = 0L
     }
 
     private fun featureVector(time: Long): FloatArray {
@@ -233,8 +236,8 @@ object OrcaContextBrain {
             if (videoHint) 1f else 0f,                   // 12 video content
             if (readingHint) 1f else 0f,                 // 13 reading
             if (loadingHint) 1f else 0f,                 // 14 loading
-            if (errorHint) 1f else 0f,                   // 15 error
-            if (successHint) 1f else 0f,                 // 16 success
+            if (errorHint && recent(lastContextAt, 6_000L, time)) 1f else 0f, // 15 error
+            if (successHint && recent(lastContextAt, 6_000L, time)) 1f else 0f, // 16 success
             if (recent(lastNotificationAt, ALERT_MS, time)) 1f else 0f, // 17 alert
             if (lastActivityAt > 0L && time - lastActivityAt > IDLE_MS) 1f else 0f, // 18 idle
             if (!screenOn) 1f else 0f                     // 19 screen off
@@ -289,6 +292,7 @@ object OrcaContextBrain {
             lastNotificationAt.takeIf { recent(it, ALERT_MS, time) }?.plus(ALERT_MS),
             lastScrollAt.takeIf { recent(it, SCROLL_MS, time) }?.plus(SCROLL_MS),
             lastTapAt.takeIf { recent(it, 2500L, time) }?.plus(2500L),
+            lastContextAt.takeIf { (errorHint || successHint) && recent(it, 6000L, time) }?.plus(6000L),
             lastActivityAt.takeIf { it > 0L && time - it <= IDLE_MS }?.plus(IDLE_MS + 1L)
         )
         deadlines.minOrNull()?.let { handler.postDelayed(scheduledRefresh, (it - time + 5L).coerceAtLeast(10L)) }
