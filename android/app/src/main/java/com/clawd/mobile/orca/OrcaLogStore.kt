@@ -20,7 +20,7 @@ object OrcaLogStore {
         val next = (old.lines().filter { it.isNotBlank() } + "${format.format(Date())}  $safeMessage")
             .takeLast(MAX_ENTRIES)
             .joinToString("\n")
-        prefs.edit().remove(KEY).putString("log_text", next).apply()
+        prefs.edit().putString("log_text", next).apply()
     }
 
     @Synchronized
