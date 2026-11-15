@@ -315,7 +315,7 @@ object OrcaContextBrain {
         val batteryPercent = (batteryFraction * 100).toInt()
         val chargeMark = if (charging) "+" else ""
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        val key = behaviorMemory.contextKey(currentPackage, hour)
+        val key = behaviorMemory.contextKey(currentPackage, hour, isWeekend())
         val memory = appContext?.let { behaviorMemory.summary(it, key) } ?: "personalization waiting"
         val sessionMinutes = if (sessionStartedAt > 0L) {
             ((now() - sessionStartedAt) / 60_000L).coerceAtLeast(0L)
@@ -462,6 +462,8 @@ object OrcaContextBrain {
     private fun hardIntent(features: FloatArray): OrcaIntent? = when {
         !screenOn || deviceIdle || !interactive -> OrcaIntent.SLEEP
         thermalStatus >= PowerManager.THERMAL_STATUS_SEVERE && features[18] == 1f -> OrcaIntent.SLEEP
+        sessionStartedAt > 0L && now() - sessionStartedAt >= 90L * 60_000L && features[18] == 1f ->
+            OrcaIntent.SLEEP
         features[0] == 1f -> OrcaIntent.TYPING
         features[1] == 1f -> OrcaIntent.THINKING
         features[17] == 1f -> OrcaIntent.NOTIFICATION
@@ -533,7 +535,7 @@ object OrcaContextBrain {
         }
         if (learnWeight > 0 && currentPackage.isNotEmpty()) {
             val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-            val key = behaviorMemory.contextKey(currentPackage, hour)
+            val key = behaviorMemory.contextKey(currentPackage, hour, isWeekend())
             behaviorMemory.observe(context, key, intent, learnWeight)
         }
 
@@ -546,7 +548,7 @@ object OrcaContextBrain {
     private fun fuseWithPersonalization(context: Context, base: FloatArray): FloatArray {
         if (currentPackage.isEmpty()) return base.copyOf()
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        val key = behaviorMemory.contextKey(currentPackage, hour)
+        val key = behaviorMemory.contextKey(currentPackage, hour, isWeekend())
         val prior = behaviorMemory.prior(context, key)
         if (prior.blendWeight <= 0f) return base.copyOf()
 
@@ -561,6 +563,11 @@ object OrcaContextBrain {
             for (i in fused.indices) fused[i] /= total
         }
         return fused
+    }
+
+    private fun isWeekend(): Boolean {
+        val day = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
+        return day == Calendar.SATURDAY || day == Calendar.SUNDAY
     }
 
     private fun thermalLabel(): String = when {
