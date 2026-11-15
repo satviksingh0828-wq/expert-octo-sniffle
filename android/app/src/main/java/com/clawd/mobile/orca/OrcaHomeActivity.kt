@@ -85,6 +85,10 @@ class OrcaHomeActivity : ComponentActivity() {
                         OutlinedButton(onClick = { OrcaContextBrain.teach(this@OrcaHomeActivity, OrcaIntent.MUSIC) }) { Text("Music") }
                         OutlinedButton(onClick = { OrcaContextBrain.teach(this@OrcaHomeActivity, OrcaIntent.CODING) }) { Text("Coding") }
                     }
+                    OutlinedButton(onClick = {
+                        OrcaContextBrain.resetPersonalization(this@OrcaHomeActivity)
+                        log("Learned habit memory reset.")
+                    }) { Text("Reset learned habits") }
                     HorizontalDivider()
                     Text("Test animations", style = MaterialTheme.typography.titleLarge)
                     androidx.compose.foundation.layout.Row(
