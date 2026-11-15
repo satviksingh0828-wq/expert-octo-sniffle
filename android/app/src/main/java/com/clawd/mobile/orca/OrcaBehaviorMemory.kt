@@ -19,9 +19,11 @@ class OrcaBehaviorMemory {
 
     data class ContextKey(
         val category: AppCategory,
-        val timeBucket: TimeBucket
+        val timeBucket: TimeBucket,
+        val weekend: Boolean
     ) {
-        val id: String get() = "${category.name}_${timeBucket.name}"
+        val id: String
+            get() = "${category.name}_${timeBucket.name}_${if (weekend) "WEEKEND" else "WEEKDAY"}"
     }
 
     data class Prior(
@@ -36,8 +38,8 @@ class OrcaBehaviorMemory {
         private const val MAX_BLEND = 0.24f
     }
 
-    fun contextKey(packageName: String, hour: Int): ContextKey =
-        ContextKey(categoryFor(packageName), timeBucketFor(hour))
+    fun contextKey(packageName: String, hour: Int, weekend: Boolean): ContextKey =
+        ContextKey(categoryFor(packageName), timeBucketFor(hour), weekend)
 
     fun categoryFor(packageName: String): AppCategory {
         val pkg = packageName.lowercase()
