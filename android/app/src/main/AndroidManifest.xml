@@ -44,6 +44,15 @@
                 android:value="floating_window" />
         </service>
         <service
+            android:name="com.clawd.mobile.orca.OrcaNotificationService"
+            android:label="ORCA notification reactions"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+        <service
             android:name="com.clawd.mobile.orca.OrcaScreenService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
