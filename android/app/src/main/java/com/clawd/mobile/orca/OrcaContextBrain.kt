@@ -3,6 +3,7 @@ package com.clawd.mobile.orca
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import com.clawd.mobile.overlay.FloatingPetService
 import java.util.Calendar
@@ -26,6 +27,7 @@ object OrcaContextBrain {
 
     private val handler = Handler(Looper.getMainLooper())
     private val neural by lazy { OrcaNeuralNetwork() }
+    private val behaviorMemory by lazy { OrcaBehaviorMemory() }
     private var restored = false
     private var appContext: Context? = null
 
@@ -56,6 +58,12 @@ object OrcaContextBrain {
     private var bluetoothAudio = false
     private var moving = false
     private var strongMotion = false
+
+    private var deviceIdle = false
+    private var interactive = true
+    private var userPresent = true
+    private var thermalStatus = PowerManager.THERMAL_STATUS_NONE
+    private var sessionStartedAt = 0L
 
     private var searchHint = false
     private var videoHint = false
@@ -99,6 +107,7 @@ object OrcaContextBrain {
             lastAppSwitchAt = time
         }
         currentPackage = pkg
+        if (sessionStartedAt == 0L) sessionStartedAt = time
         editorFocused = false
         lastTypedAt = 0L
         lastScrollAt = 0L
@@ -223,6 +232,21 @@ object OrcaContextBrain {
     }
 
     @Synchronized
+    fun onSystemState(
+        context: Context,
+        deviceIdle: Boolean? = null,
+        interactive: Boolean? = null,
+        userPresent: Boolean? = null,
+        thermalStatus: Int? = null
+    ) {
+        if (!active(context)) return
+        deviceIdle?.let { this.deviceIdle = it }
+        interactive?.let { this.interactive = it }
+        userPresent?.let { this.userPresent = it }
+        thermalStatus?.let { this.thermalStatus = it }
+        refresh(context)
+    }
+    @Synchronized
     fun onSensitiveApp(context: Context) {
         currentPackage = ""
         previousPackage = ""
@@ -250,6 +274,11 @@ object OrcaContextBrain {
         lastConfidence = 0f
         lastMargin = 0f
         appSwitchBurst = 0
+        sessionStartedAt = 0L
+        deviceIdle = false
+        interactive = true
+        userPresent = true
+        thermalStatus = PowerManager.THERMAL_STATUS_NONE
         lastFeatures.fill(0f)
         smoothedProbabilities.fill(0f)
         clearHints()
@@ -285,8 +314,15 @@ object OrcaContextBrain {
         val marginPercent = (lastMargin * 100).toInt()
         val batteryPercent = (batteryFraction * 100).toInt()
         val chargeMark = if (charging) "+" else ""
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val key = behaviorMemory.contextKey(currentPackage, hour)
+        val memory = appContext?.let { behaviorMemory.summary(it, key) } ?: "personalization waiting"
+        val sessionMinutes = if (sessionStartedAt > 0L) {
+            ((now() - sessionStartedAt) / 60_000L).coerceAtLeast(0L)
+        } else 0L
         return "Activity: $activity | AI $confidencePercent% margin $marginPercent% | " +
-            "$net | audio $route | motion $motion | battery $batteryPercent%$chargeMark"
+            "$net | audio $route | motion $motion | battery $batteryPercent%$chargeMark | " +
+            "thermal ${thermalLabel()} | session ${sessionMinutes}m | $memory"
     }
 
     private fun active(context: Context): Boolean =
@@ -381,13 +417,14 @@ object OrcaContextBrain {
         lastFeatures = features.copyOf()
         val rawPrediction = neural.predict(features)
         updateSmoothedProbabilities(rawPrediction.probabilities)
+        val fusedProbabilities = fuseWithPersonalization(app, smoothedProbabilities)
 
-        val ranked = smoothedProbabilities.indices.sortedByDescending { smoothedProbabilities[it] }
+        val ranked = fusedProbabilities.indices.sortedByDescending { fusedProbabilities[it] }
         val bestIndex = ranked.firstOrNull() ?: OrcaIntent.IDLE.ordinal
         val secondIndex = ranked.getOrNull(1) ?: bestIndex
         val neuralIntent = OrcaIntent.entries[bestIndex]
-        val neuralConfidence = smoothedProbabilities[bestIndex]
-        val margin = (neuralConfidence - smoothedProbabilities[secondIndex]).coerceAtLeast(0f)
+        val neuralConfidence = fusedProbabilities[bestIndex]
+        val margin = (neuralConfidence - fusedProbabilities[secondIndex]).coerceAtLeast(0f)
         lastConfidence = neuralConfidence
         lastMargin = margin
 
@@ -423,7 +460,8 @@ object OrcaContextBrain {
     }
 
     private fun hardIntent(features: FloatArray): OrcaIntent? = when {
-        !screenOn -> OrcaIntent.SLEEP
+        !screenOn || deviceIdle || !interactive -> OrcaIntent.SLEEP
+        thermalStatus >= PowerManager.THERMAL_STATUS_SEVERE && features[18] == 1f -> OrcaIntent.SLEEP
         features[0] == 1f -> OrcaIntent.TYPING
         features[1] == 1f -> OrcaIntent.THINKING
         features[17] == 1f -> OrcaIntent.NOTIFICATION
@@ -486,11 +524,63 @@ object OrcaContextBrain {
         lastIntent = intent
         lastIntentAt = now()
         OrcaPetController.react(context, intent.animation)
+
+        val learnWeight = when {
+            reason == "user correction" -> 8
+            reason == "hard signal" && intent in persistentActivities -> 2
+            reason == "temporal neural" && confidence >= 0.82f && intent in persistentActivities -> 1
+            else -> 0
+        }
+        if (learnWeight > 0 && currentPackage.isNotEmpty()) {
+            val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+            val key = behaviorMemory.contextKey(currentPackage, hour)
+            behaviorMemory.observe(context, key, intent, learnWeight)
+        }
+
         OrcaLogStore.append(
             context,
             "Brain: ${intent.display} | $reason | confidence ${(confidence * 100).toInt()}% | app ${currentPackage.take(64)}"
         )
     }
+
+    private fun fuseWithPersonalization(context: Context, base: FloatArray): FloatArray {
+        if (currentPackage.isEmpty()) return base.copyOf()
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val key = behaviorMemory.contextKey(currentPackage, hour)
+        val prior = behaviorMemory.prior(context, key)
+        if (prior.blendWeight <= 0f) return base.copyOf()
+
+        val fused = FloatArray(base.size)
+        var total = 0f
+        for (i in base.indices) {
+            fused[i] = base[i] * (1f - prior.blendWeight) +
+                prior.probabilities[i] * prior.blendWeight
+            total += fused[i]
+        }
+        if (total > 0f) {
+            for (i in fused.indices) fused[i] /= total
+        }
+        return fused
+    }
+
+    private fun thermalLabel(): String = when {
+        thermalStatus >= PowerManager.THERMAL_STATUS_CRITICAL -> "critical"
+        thermalStatus >= PowerManager.THERMAL_STATUS_SEVERE -> "severe"
+        thermalStatus >= PowerManager.THERMAL_STATUS_MODERATE -> "moderate"
+        else -> "normal"
+    }
+
+    private val persistentActivities = setOf(
+        OrcaIntent.TYPING,
+        OrcaIntent.THINKING,
+        OrcaIntent.READING,
+        OrcaIntent.BROWSING,
+        OrcaIntent.CODING,
+        OrcaIntent.MUSIC,
+        OrcaIntent.VIDEO,
+        OrcaIntent.IDLE,
+        OrcaIntent.SLEEP
+    )
 
     private fun scheduleNext(time: Long) {
         handler.removeCallbacks(scheduledRefresh)
