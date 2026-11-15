@@ -55,3 +55,10 @@ The ORCA screen now includes **Reset learned habits**, which clears the persiste
 ## Adaptive motion sampling
 
 The accelerometer is sampled only while the pet service is running, the display is interactive and Android battery saver is off. Screen and power-save broadcasts immediately update the sampling policy; suspending sampling clears stale motion features. Network and audio-route callbacks remain event-driven. This saves sensor work without requiring any new permission. Verify screen-off/on, battery-saver toggles, and resumed motion on a real device.
+
+
+## Adaptive motion sampling
+
+The accelerometer monitor unregisters while the display is off or Android Battery Saver is enabled, and resumes automatically when both permit sampling. Motion flags are cleared when sampling stops so stale movement cannot influence the neural context brain. Connectivity and audio-route callbacks remain event-driven. This does not read raw screen content or persist sensor samples.
+
+On a device, test screen-off/on, Battery Saver toggles, stop/restart, and verify motion resumes without stale state. APK compilation is required before merging.
