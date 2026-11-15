@@ -44,6 +44,37 @@ object OrcaActivityEngine {
         }
     }
 
+    /**
+     * Deterministic non-AI responses to actual Android events. Event kinds are
+     * coarse metadata only; text entered into another app is never required.
+     */
+    fun eventAnimation(kind: String): String? = when (kind) {
+        "typing", "editor_focus" -> "calico-working-typing.apng"
+        "notification", "message" -> "calico-notification.apng"
+        "music" -> "calico-working-conducting.apng"
+        "tap" -> "calico-react-poke.apng"
+        "scroll" -> "calico-mini-crabwalk.apng"
+        "task_complete", "success" -> "calico-happy.apng"
+        "failure" -> "calico-error.apng"
+        "thinking" -> "calico-thinking.apng"
+        "building" -> "calico-working-building.apng"
+        "multitasking" -> "calico-working-juggling.apng"
+        "moving" -> "calico-working-carrying.apng"
+        "cleaning" -> "calico-working-sweeping.apng"
+        "peek" -> "calico-mini-peek.apng"
+        "alert" -> "calico-mini-alert.apng"
+        "wake" -> "calico-waking.apng"
+        "sleep" -> "calico-sleeping.apng"
+        "yawn" -> "calico-yawning.apng"
+        "doze" -> "calico-dozing.apng"
+        "collapse" -> "calico-collapsing.apng"
+        "enter" -> "calico-mini-enter.apng"
+        "celebrate" -> "calico-mini-happy.apng"
+        "wander" -> "calico-mini-crabwalk.apng"
+        "idle" -> "calico-idle.apng"
+        else -> null
+    }
+
     fun describe(animation: String): String = when (animation) {
         "calico-error.apng" -> "error state"
         "calico-notification.apng" -> "notification state"
