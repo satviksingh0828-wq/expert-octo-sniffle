@@ -7,7 +7,7 @@ import org.json.JSONObject
 /** A real, API-key-free local language-model client. Uses loopback only (Termux llama.cpp). */
 /** Real native LiteRT-LM inference, fully inside Calico; no Termux or cloud calls. */
 object CalicoChatEngine {
-    const val OFFLINE_HELP = CalicoModelManager.INSTALL_HELP
+    const val OFFLINE_HELP = "Choose an installed local AI model in Models, or use Calico\'s built-in pet brain. No API key is required."
     suspend fun respond(
         context: Context,
         history: List<CalicoChatMessage>,
