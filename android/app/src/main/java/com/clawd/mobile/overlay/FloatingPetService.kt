@@ -43,6 +43,8 @@ class FloatingPetService : Service() {
         const val ACTION_PET_RECENTER = "com.clawd.mobile.PET_RECENTER"
         const val ACTION_PET_SLEEP_TIMEOUT = "com.clawd.mobile.PET_SLEEP_TIMEOUT"
         const val ACTION_ORCA_ANIMATION = "com.clawd.mobile.ORCA_ANIMATION"
+        const val ACTION_CALICO_HOME_VISIBLE = "com.clawd.mobile.CALICO_HOME_VISIBLE"
+        const val EXTRA_CALICO_HOME_VISIBLE = "calico_home_visible"
         const val EXTRA_ORCA_ANIMATION = "orca_animation"
         const val ACTION_DISCONNECT = "com.clawd.mobile.ACTION_DISCONNECT"
         const val EXTRA_SLEEP_SEC = "sleep_sec"
@@ -72,6 +74,7 @@ class FloatingPetService : Service() {
     private var localReactionUntil = 0L
     private var pendingLocalAnimation: String? = null
     private var screenActive = true
+    private var homeVisible = false
     private var beforeScreenOffAnimation = "calico-idle.apng"
     private val overlaySleepHandler = Handler(Looper.getMainLooper())
     private val hideAfterSleep = Runnable {
@@ -136,11 +139,18 @@ class FloatingPetService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_CALICO_HOME_VISIBLE) {
+            homeVisible = intent.getBooleanExtra(EXTRA_CALICO_HOME_VISIBLE, false)
+            if (character == "calico" && screenActive) {
+                petView?.visibility = if (homeVisible) View.INVISIBLE else View.VISIBLE
+            }
+            return START_STICKY
+        }
         if (intent?.action == ACTION_ORCA_ANIMATION) {
             val animation = intent.getStringExtra(EXTRA_ORCA_ANIMATION) ?: return START_STICKY
             if (character == "calico" && animation in com.clawd.mobile.orca.OrcaPetController.animations) {
                 if (!screenActive && animation != "calico-sleeping.apng") return START_STICKY
-                if (petView?.visibility != View.VISIBLE && screenActive) {
+                if (!homeVisible && petView?.visibility != View.VISIBLE && screenActive) {
                     petView?.visibility = View.VISIBLE
                 }
                 localReactionJob?.cancel()
@@ -572,12 +582,12 @@ class FloatingPetService : Service() {
             localReactionUntil = Long.MAX_VALUE
             pendingLocalAnimation = "calico-sleeping.apng"
             petView?.let { view ->
-                view.visibility = View.VISIBLE
+                view.visibility = if (homeVisible) View.INVISIBLE else View.VISIBLE
                 SvgLoader.loadSvg(view, "svg/calico/calico-sleeping.apng", loop = true)
             }
             overlaySleepHandler.postDelayed(hideAfterSleep, 30_000L)
         } else {
-            petView?.visibility = View.VISIBLE
+            petView?.visibility = if (homeVisible) View.INVISIBLE else View.VISIBLE
             localReactionUntil = Long.MAX_VALUE
             pendingLocalAnimation = null
             val view = petView
