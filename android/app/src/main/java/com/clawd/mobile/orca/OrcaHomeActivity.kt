@@ -26,6 +26,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,6 +47,10 @@ class OrcaHomeActivity : ComponentActivity() {
     private var running by mutableStateOf(false)
     private var mood by mutableStateOf("calico-idle.apng")
     private var status by mutableStateOf("")
+    private var selectedModel by mutableStateOf("pet")
+    private var modelReady by mutableStateOf(false)
+    private var modelDownloading by mutableStateOf(false)
+    private var modelProgress by mutableIntStateOf(0)
     private var showWelcome by mutableStateOf(false)
     private var showPermissions by mutableStateOf(false)
     private var overlayPending = false
@@ -66,10 +71,14 @@ class OrcaHomeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         chats = CalicoChatStore.load(this)
+        modelReady = CalicoModelManager.ready(this)
+        selectedModel = CalicoModelChoice.get(this)
+        if (selectedModel == "qwen" && !modelReady) selectedModel = "pet"
         if (chats.isNotEmpty()) activeId = chats.first().id
         showWelcome = !getSharedPreferences("calico_onboarding", MODE_PRIVATE)
             .getBoolean("welcome_seen_v1", false)
         running = FloatingPetService.isRunning
+        showPermissions = !showWelcome && missingCompanionPermissions()
 
         setContent {
             CalicoTheme {
@@ -80,6 +89,10 @@ class OrcaHomeActivity : ComponentActivity() {
                     generating = busy,
                     mood = mood,
                     petRunning = running,
+                    selectedModel = selectedModel,
+                    modelReady = modelReady,
+                    modelDownloading = modelDownloading,
+                    modelProgress = modelProgress,
                     status = status,
                     onDraftChange = { draft = it.take(6000) },
                     onSend = ::send,
@@ -88,8 +101,13 @@ class OrcaHomeActivity : ComponentActivity() {
                     onDelete = ::deleteChat,
                     onPermissions = { showPermissions = true },
                     onTogglePet = { if (running) stopPet() else requestPet() },
+                    onInstallModel = ::installModel,
+                    onSelectModel = ::selectModel,
                     onCalendar = ::openCalendar,
                     onSearch = ::openSearch,
+                    onMaps = ::openMaps,
+                    onEmail = ::openEmail,
+                    onFiles = ::openFiles,
                     onClearAll = {
                         CalicoChatStore.clear(this)
                         chats = emptyList()
@@ -103,9 +121,10 @@ class OrcaHomeActivity : ComponentActivity() {
                         title = { Text("Welcome to Calico 🐈") },
                         text = {
                             Text(
-                                "Calico chats with an on-device model and reacts with the real animated cat. " +
-                                "For floating pet and screen reactions, Android needs special permissions. " +
-                                "You choose what to enable; chats work without these permissions."
+                                "Calico is your cream-and-orange cat assistant. It runs an AI model inside this app " +
+                                "after a one-time model download. Android requires special overlay and Accessibility " +
+                                "permissions for the floating cat and browser-tab reactions. Each permission must be " +
+                                "granted in Android settings before full companion mode starts."
                             )
                         },
                         confirmButton = {
@@ -144,19 +163,90 @@ class OrcaHomeActivity : ComponentActivity() {
                 )
             }
         }
-        if (!showWelcome && PrefsStore.getInstance(this).isFloatingPetEnabled() &&
-            Settings.canDrawOverlays(this)) startPet()
+        if (!showWelcome && !missingCompanionPermissions() &&
+            !isPetManuallyStopped()) startPet()
     }
 
     override fun onResume() {
         super.onResume()
         running = FloatingPetService.isRunning
+        modelReady = CalicoModelManager.ready(this)
+        if (!showWelcome && missingCompanionPermissions()) {
+            // Re-check every return from Android Settings and each new launch.
+            showPermissions = true
+        } else if (!showWelcome && !isPetManuallyStopped() && !running) {
+            startPet()
+        }
+        setHomePetVisibility(true)
+    }
+
+    override fun onPause() {
+        setHomePetVisibility(false)
+        super.onPause()
+    }
+
+    private fun missingCompanionPermissions(): Boolean =
+        !Settings.canDrawOverlays(this) ||
+            !OrcaPrivacy.accessibilityServiceEnabled(this)
+
+    private fun isPetManuallyStopped(): Boolean =
+        getSharedPreferences("calico_onboarding", MODE_PRIVATE)
+            .getBoolean("pet_manually_stopped", false)
+
+    private fun setHomePetVisibility(visible: Boolean) {
+        if (!FloatingPetService.isRunning) return
+        try {
+            startService(Intent(this, FloatingPetService::class.java).apply {
+                action = FloatingPetService.ACTION_CALICO_HOME_VISIBLE
+                putExtra(FloatingPetService.EXTRA_CALICO_HOME_VISIBLE, visible)
+            })
+        } catch (_: Exception) { /* Keep in-app chat usable without overlay. */ }
     }
 
     private fun dismissWelcome() {
         showWelcome = false
         getSharedPreferences("calico_onboarding", MODE_PRIVATE).edit()
             .putBoolean("welcome_seen_v1", true).apply()
+        if (missingCompanionPermissions()) showPermissions = true
+        else if (!isPetManuallyStopped()) startPet()
+    }
+
+    private fun selectModel(choice: String) {
+        if (choice == "qwen" && !modelReady) {
+            status = "Download Qwen3 first to select its language model."
+            return
+        }
+        selectedModel = if (choice == "qwen") "qwen" else "pet"
+        CalicoModelChoice.set(this, selectedModel)
+        status = if (selectedModel == "qwen") {
+            "Qwen selected: AI chat and richer pet decisions run in Calico."
+        } else {
+            "Built-in pet brain selected: basic chat and instant animations work with no download."
+        }
+    }
+
+    private fun installModel() {
+        if (modelDownloading || modelReady) return
+        modelDownloading = true
+        modelProgress = 0
+        status = "Downloading Qwen3-0.6B into Calico's private storage; keep the app open."
+        lifecycleScope.launch {
+            try {
+                CalicoModelManager.install(this@OrcaHomeActivity) { pct ->
+                    modelProgress = pct
+                    status = "Installing local AI: " + pct + "%"
+                }
+                modelReady = CalicoModelManager.ready(this@OrcaHomeActivity)
+                if (modelReady) selectModel("qwen")
+                status = if (modelReady) "Qwen3 installed. Chat now runs entirely in Calico."
+                    else "Local model could not be verified."
+            } catch (error: Exception) {
+                modelReady = false
+                status = "Model download failed: " + (error.message ?: "Try again on Wi-Fi.").take(130)
+            } finally {
+                modelDownloading = false
+            }
+        }
     }
 
     private fun persist(value: List<CalicoChatThread>) {
@@ -184,6 +274,10 @@ class OrcaHomeActivity : ComponentActivity() {
     private fun send() {
         val prompt = draft.trim()
         if (busy || prompt.isEmpty()) return
+        if (selectedModel == "qwen" && !modelReady) {
+            selectedModel = "pet"
+            CalicoModelChoice.set(this, "pet")
+        }
         val current = chats.find { it.id == activeId }
             ?: CalicoChatThread(UUID.randomUUID().toString(), "New chat", emptyList()).also {
                 persist(listOf(it) + chats)
@@ -195,14 +289,26 @@ class OrcaHomeActivity : ComponentActivity() {
         val title = if (current.messages.isEmpty()) prompt.take(38) else current.title
         persist(chats.map { if (it.id == id) it.copy(title = title, messages = updated) else it })
         draft = ""
-        busy = true
+        busy = selectedModel == "qwen"
         mood = CalicoChatEngine.animationFor(prompt)
         OrcaPetController.react(this, mood)
-        status = "Generating with the model on this Android device…"
+        if (selectedModel == "pet") {
+            val response = CalicoBuiltInChat.reply(prompt)
+            val thread = chats.find { it.id == id }
+            if (thread != null) {
+                replaceMessages(id, thread.messages.dropLast(1) +
+                    CalicoChatMessage("assistant", response))
+            }
+            mood = CalicoChatEngine.animationFor(response)
+            OrcaPetController.react(this, mood)
+            status = "Built-in Calico pet brain · instant offline response"
+            return
+        }
+        status = "Qwen is responding inside Calico on this Android device…"
         lifecycleScope.launch {
             val response = StringBuilder()
             try {
-                CalicoChatEngine.respond(updated.dropLast(1)) { delta ->
+                CalicoChatEngine.respond(this@OrcaHomeActivity, updated.dropLast(1)) { delta ->
                     response.append(delta)
                     val thread = chats.find { it.id == id } ?: return@respond
                     replaceMessages(id, thread.messages.dropLast(1) +
@@ -239,6 +345,8 @@ class OrcaHomeActivity : ComponentActivity() {
     }
 
     private fun startPet() {
+        getSharedPreferences("calico_onboarding", MODE_PRIVATE).edit()
+            .putBoolean("pet_manually_stopped", false).apply()
         PrefsStore.getInstance(this).apply {
             setPetCharacter("calico")
             setFloatingPetEnabled(true)
@@ -247,7 +355,8 @@ class OrcaHomeActivity : ComponentActivity() {
         try {
             ContextCompat.startForegroundService(this, Intent(this, FloatingPetService::class.java))
             running = true
-            status = "Calico pet started. Accessibility and notification access are optional."
+            setHomePetVisibility(true)
+            status = "Calico pet started; browser-tab awareness needs Accessibility permission."
         } catch (error: Exception) {
             running = false
             PrefsStore.getInstance(this).setFloatingPetEnabled(false)
@@ -257,6 +366,8 @@ class OrcaHomeActivity : ComponentActivity() {
     }
 
     private fun stopPet() {
+        getSharedPreferences("calico_onboarding", MODE_PRIVATE).edit()
+            .putBoolean("pet_manually_stopped", true).apply()
         OrcaPrivacy.setEnabled(this, false)
         OrcaContextBrain.stop()
         PrefsStore.getInstance(this).setFloatingPetEnabled(false)
@@ -275,6 +386,35 @@ class OrcaHomeActivity : ComponentActivity() {
             startActivity(Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI))
         } catch (_: Exception) {
             status = "Install a calendar app to add events. No Google API key is required."
+        }
+    }
+
+    private fun openMaps() {
+        try {
+            val query = draft.trim().ifBlank { "nearby places" }
+            startActivity(Intent(Intent.ACTION_VIEW,
+                Uri.parse("geo:0,0?q=" + Uri.encode(query))))
+        } catch (_: Exception) {
+            status = "Install or enable a maps app to open places."
+        }
+    }
+
+    private fun openEmail() {
+        try {
+            startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")))
+        } catch (_: Exception) {
+            status = "No email app is installed."
+        }
+    }
+
+    private fun openFiles() {
+        try {
+            startActivity(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+            })
+        } catch (_: Exception) {
+            status = "Android's document picker is unavailable."
         }
     }
 

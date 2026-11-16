@@ -1,64 +1,76 @@
-# Calico — Offline Android Cat Assistant
+# Calico 0.18 — On-device Android cat AI
 
-Calico is the cat-branded launcher and assistant for the original Android virtual pet.
-Package ID stays `com.orca.companion` to retain upgrades and data.
+Calico uses the cream/ginger/cocoa cat design and existing packaged Calico animations.
 
-## Implemented in 0.17
+## Chat and model choices
 
-- Calico launcher name, cream/ginger/cocoa palette derived from the supplied cat artwork.
-- Original cat-face vector launcher icon; the animated pet still uses the existing bundled Calico APNG/SVG files.
-- Native Jetpack Compose chat UI with conversation drawer, local history, streaming replies, and live animated Calico avatar.
-- Tap the floating Calico pet to open chat; existing approval bubble gets priority.
-- First-run permission explanation with independent Android settings for overlay, accessibility, notifications, and optional notification posting. **No automatic Accessibility enablement**.
-- Calendar event composer via Android intent; Android web-search intent; no Google API keys.
-- Context-aware cat reactions to user questions, error reports, programming, studying, music, and positive replies.
-- A real localhost-only OpenAI-compatible LLM adapter, plus the existing independent 34-signal neural pet activity model. No cloud fallback, no API key, no fake chat completions.
-- Stored conversations stay in app-private preferences and can be deleted inside the conversation drawer.
-- Only `127.0.0.1`/`localhost` permit plain HTTP; other traffic retains the existing strict network security policy.
+The app opens with **Built-in Calico pet brain** selected. This is the existing lightweight
+34-signal neural activity classifier plus deterministic basic chat. It is ready without
+downloading anything or using an account. The built-in model is **not a generative LLM**:
+it can explain its capabilities, respond to basic greetings and react to activity
+topics, but cannot reliably answer arbitrary questions.
 
-## Starting a local conversational LLM
+Open **Models** in Calico's chat header to optionally download **Qwen3-0.6B** (about
+614 MB) from Hugging Face. The download runs only after the user taps the button,
+is saved in Calico's private app storage, is checked with SHA-256, and is not
+sent to any AI service for inference. The app uses Google LiteRT-LM on-device
+inference on the CPU and does not need Termux, Ollama, an external server,
+Google account permissions, or any API key. Allow roughly 1 GB of free storage
+for downloading and installation. After installation, you can switch between
+**Built-in pet brain** and **Qwen3-0.6B** in the Models dialog.
 
-The packaged neural **pet behavior classifier cannot generate arbitrary conversational text**.
-Calico therefore talks to a local llama.cpp server on the *same Android device*.
-For example, with a compatible GGUF model already downloaded in Termux:
+The same model selection applies to both **chat and pet**. When Qwen is selected
+and available, it can refine the pet's animation from coarse, non-private
+activity categories every 45 seconds at most. The existing neural pet brain
+continues to choose immediate reactions and is always the fallback. Qwen
+suggestions are constrained to packaged Calico animations. Screen text and
+browser titles are **never sent** to the model's pet animation prompt.
 
-```sh
-llama-server -m /path/to/your-model.gguf --host 127.0.0.1 --port 8080 -c 4096
-```
+## App layout and controls
 
-If that binary is installed elsewhere, use its actual absolute path. The endpoint is
-`http://127.0.0.1:8080/v1/chat/completions`. Start the server first; then open Calico.
-No remote Ollama server or cloud API is required. The current build **does not bundle model weights
-or an LLM inference runtime**, so generative chat requires that local Termux process.
+- The animated Calico avatar appears in a dedicated bottom-right area inside
+  the chat screen. The floating overlay is temporarily hidden there, to avoid
+  showing two cats at once.
+- Outside Calico chat, the overlay first appears at the bottom-right corner.
+  Dragging changes its saved position.
+- Tapping the floating cat opens Calico chat.
+- On each launch or return from settings, missing overlay or Accessibility
+  permissions are checked again and the setup screen is shown.
+- Overlay is needed for the floating cat and Accessibility is needed for
+  browser-tab reactions. Notification access remains optional.
+- The shortcuts for Calendar, Android search, Maps, email and files use
+  Android intents. They do not grant access to the user's Gmail, Drive or
+  Calendar data behind the scenes.
 
-The pet's own classification and animations continue to work without that server.
+## Browser reactions
 
-## Permission behavior
+With Android Accessibility permission granted, Calico reads limited accessible
+browser window titles and visible UI hints **locally**. It classifies coding,
+studying, reading, media, shopping, maps, search, planning and errors into
+suitable animation choices instead of assuming every Chrome tab is identical.
+Titles and page text are not persisted or uploaded. Sensitive and incognito
+windows are excluded by best-effort checks. Browser implementation and
+accessibility tree details vary by device.
 
-Onboarding explains options and never grants Android permissions by itself.
-Overlay is necessary only to display the floating pet. Accessibility is optional
-for coarse screen activity reactions; Calico does not upload screen text.
-Notification listener access is optional for event and media reactions.
+## Screen-off sleep
 
-The calendar shortcut delegates creation to the installed calendar app.
-The web-search shortcut opens Android search. Neither is an API-key-based Google
-Workspace integration, and neither grants access to arbitrary apps.
+When the screen turns off, Calico enters the sleeping state, sets a 30-second
+timer and hides the overlay at timeout. On screen wake it reappears and plays
+the waking animation before returning to the active state. Android cannot
+show an overlay on a physically powered-off display; a 30-second visible
+lock-screen animation is not guaranteed, nor can Calico power on the display.
 
-## Limits and next work
+## Limits
 
-- Google's proprietary Circle to Search has no reliable public launcher API.
-  This build offers an Android search shortcut, **not** screen cropping or Circle to Search.
-- Gmail, Drive, and Tasks account data require separate consented API authorization;
-  not implemented here. No Google account sign-in or data syncing is claimed.
-- Image-understanding requires a local multimodal model plus a user-approved
-  screen-capture flow; not implemented in 0.17.
-- Verify on a real device with the local model running and with the optional
-  accessibility/overlay permissions enabled.
+Qwen needs an explicit one-time download and sufficient device RAM/storage.
+LiteRT-LM model initialization may take several seconds. Small language models
+can still make errors. The app's conversational inference is local; a fresh
+model download requires internet access. No Gemini cloud API or secret keys.
 
-## Design reference
+System-level Circle to Search, image-based screen analysis, and full Gmail,
+Drive, Tasks and Google-account authorization are **not implemented**.
+The current model and screen reactions should be tested on a real Android
+device before relying on them.
 
-Chat layout concepts (conversation drawer, streaming responses, composer,
-chat history) were adapted for the existing Kotlin/Compose application from
-[EvanBacon/chat-template](https://github.com/EvanBacon/chat-template),
-a separate MIT-licensed Expo/React Native project. Its cloud Anthropic API
-backend is deliberately **not** incorporated into this no-key Android application.
+UI layout was adapted to native Jetpack Compose from
+[EvanBacon/chat-template](https://github.com/EvanBacon/chat-template).

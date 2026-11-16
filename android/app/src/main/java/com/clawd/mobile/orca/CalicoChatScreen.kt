@@ -8,6 +8,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DrawerValue
@@ -45,6 +47,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -68,6 +73,10 @@ fun CalicoChatScreen(
     generating: Boolean,
     mood: String,
     petRunning: Boolean,
+    selectedModel: String,
+    modelReady: Boolean,
+    modelDownloading: Boolean,
+    modelProgress: Int,
     status: String,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
@@ -76,12 +85,18 @@ fun CalicoChatScreen(
     onDelete: (String) -> Unit,
     onPermissions: () -> Unit,
     onTogglePet: () -> Unit,
+    onSelectModel: (String) -> Unit,
+    onInstallModel: () -> Unit,
     onCalendar: () -> Unit,
     onSearch: () -> Unit,
+    onMaps: () -> Unit,
+    onEmail: () -> Unit,
+    onFiles: () -> Unit,
     onClearAll: () -> Unit
 ) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    var modelPickerOpen by remember { mutableStateOf(false) }
     val current = threads.find { it.id == activeId }
     val messages = current?.messages.orEmpty()
     val listState = rememberLazyListState()
@@ -137,6 +152,40 @@ fun CalicoChatScreen(
             }
         }
     ) {
+        if (modelPickerOpen) {
+            AlertDialog(
+                onDismissRequest = { modelPickerOpen = false },
+                title = { Text("Choose Calico's AI") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = {
+                            onSelectModel("pet")
+                            modelPickerOpen = false
+                        }) { Text("🐾 Built-in pet brain " + if (selectedModel == "pet") "✓" else "") }
+                        Text("Included with Calico. Quick basic replies and pet animations; not a full language model.",
+                            color = colors.onSurfaceVariant, fontSize = 12.sp)
+                        TextButton(
+                            enabled = !modelDownloading,
+                            onClick = {
+                                if (modelReady) {
+                                    onSelectModel("qwen")
+                                    modelPickerOpen = false
+                                } else {
+                                    onInstallModel()
+                                }
+                            }
+                        ) {
+                            Text(if (modelDownloading) "Downloading Qwen: $modelProgress%"
+                                else if (modelReady) "🧠 Qwen3-0.6B " + if (selectedModel == "qwen") "✓" else ""
+                                else "↓ Download Qwen3-0.6B (~614 MB)")
+                        }
+                        Text("One-time download for real, fully offline AI chat. Once installed, Qwen can also refine cat animations.",
+                            color = colors.onSurfaceVariant, fontSize = 12.sp)
+                    }
+                },
+                confirmButton = { TextButton(onClick = { modelPickerOpen = false }) { Text("Done") } }
+            )
+        }
         Column(Modifier.fillMaxSize().background(colors.background).imePadding()) {
             Row(
                 Modifier.fillMaxWidth().background(colors.surface)
@@ -148,9 +197,10 @@ fun CalicoChatScreen(
                 }
                 Column(Modifier.weight(1f)) {
                     Text("Calico", fontWeight = FontWeight.Bold, color = colors.onSurface, fontSize = 21.sp)
-                    Text("LOCAL AI · NO API KEY", color = colors.primary, fontSize = 10.sp,
+                    Text(if (selectedModel == "qwen" && modelReady) "QWEN3 · LOCAL AI" else "BUILT-IN PET BRAIN · READY", color = colors.primary, fontSize = 10.sp,
                         fontWeight = FontWeight.Bold)
                 }
+                TextButton(onClick = { modelPickerOpen = true }) { Text("Models") }
                 TextButton(onClick = onPermissions) { Text("⚙", fontSize = 22.sp) }
                 TextButton(onClick = onNewChat) { Text("+", fontSize = 26.sp) }
             }
@@ -161,7 +211,6 @@ fun CalicoChatScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    CalicoAnimatedAvatar(mood, modifier = Modifier.size(190.dp))
                     Text("Hi, I'm Calico!", color = colors.onBackground, fontSize = 27.sp,
                         fontWeight = FontWeight.ExtraBold)
                     Spacer(Modifier.height(10.dp))
@@ -170,7 +219,9 @@ fun CalicoChatScreen(
                     Spacer(Modifier.height(14.dp))
                     Surface(shape = RoundedCornerShape(14.dp),
                         color = colors.secondaryContainer) {
-                        Text("AI replies need llama.cpp running locally in Termux.",
+                        Text(if (selectedModel == "qwen" && modelReady)
+                                 "Qwen3 is ready for offline free-form conversation."
+                             else "Built-in pet brain is active now. Switch to an optional downloadable model for full AI chat.",
                             modifier = Modifier.padding(12.dp), color = colors.onSecondaryContainer,
                             fontSize = 12.sp, textAlign = TextAlign.Center)
                     }
@@ -196,17 +247,49 @@ fun CalicoChatScreen(
                     }
                 }
             }
+            // A permanently reserved bottom-right dock keeps the animated cat
+            // visible while typing, without floating over chat messages.
+            Row(
+                Modifier.fillMaxWidth().height(105.dp).padding(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("🐾 Calico is with you", color = colors.primary,
+                        fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    if (!modelReady) {
+                        if (modelDownloading) {
+                            Text("Installing local AI: $modelProgress%", fontSize = 12.sp,
+                                color = colors.onSurfaceVariant)
+                        } else {
+                            Button(onClick = onInstallModel,
+                                shape = RoundedCornerShape(14.dp)) {
+                                Text("↓ Download offline AI (~614 MB)", fontSize = 12.sp)
+                            }
+                        }
+                    } else {
+                        Text(if (selectedModel == "qwen") "Qwen AI active for chat and cat reactions" else "Built-in pet brain active; Qwen ready",
+                            color = colors.onSurfaceVariant, fontSize = 11.sp)
+                    }
+                }
+                CalicoAnimatedAvatar(mood, modifier = Modifier.size(100.dp))
+            }
             if (status.isNotBlank()) {
                 Text(status, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                     color = colors.onSurfaceVariant, fontSize = 12.sp)
             }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                modifier = Modifier.fillMaxWidth()
+                    .horizontalScroll(androidx.compose.foundation.rememberScrollState())
+                    .padding(horizontal = 10.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 TextButton(onClick = onTogglePet) { Text(if (petRunning) "🐾 Pet on" else "🐾 Start pet") }
                 TextButton(onClick = onCalendar) { Text("Calendar") }
                 TextButton(onClick = onSearch) { Text("Search") }
+                TextButton(onClick = onMaps) { Text("Maps") }
+                TextButton(onClick = onEmail) { Text("Email") }
+                TextButton(onClick = onFiles) { Text("Files") }
             }
             Row(
                 Modifier.fillMaxWidth().background(colors.surface)
@@ -233,7 +316,8 @@ fun CalicoChatScreen(
                 ) { Text("➤", fontSize = 18.sp) }
             }
             Text(
-                "Private on-device chats • The local model never needs an API key",
+                if (selectedModel == "qwen" && modelReady) "Qwen3-0.6B • offline language model + pet AI"
+                else "Built-in pet brain • always available • Qwen optional",
                 modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
                 color = colors.onSurfaceVariant, fontSize = 10.sp,
                 textAlign = TextAlign.Center

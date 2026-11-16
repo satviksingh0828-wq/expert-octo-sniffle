@@ -61,18 +61,40 @@ class OrcaScreenService : AccessibilityService() {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
         val now = android.os.SystemClock.elapsedRealtime()
-        if (now - lastAt < 3_000L) return
+        val browser = CalicoBrowserContext.isBrowser(pkg)
+        // Browser tab switches can be faster than general page reclassification.
+        if (now - lastAt < if (browser) 650L else 3_000L) return
         val fragments = ArrayList<String>()
         val root = rootInActiveWindow
+        var windowTitle = ""
         if (root != null) {
-            try { collectText(root, fragments, 0) } finally { root.recycle() }
+            try {
+                windowTitle = root.window?.title?.toString().orEmpty()
+                collectText(root, fragments, 0)
+            } finally {
+                root.recycle()
+            }
         }
-        if (fragments.isEmpty()) return
-        val context = OrcaPrivacy.sanitize(fragments.joinToString(" | ").take(1200))
-        if (context == lastContext) return
-        lastContext = context
+        if (fragments.isEmpty() && !browser) return
+        // Page title is retrieved through optional Accessibility permission, never stored.
+        val eventTitle = event.text.firstOrNull()?.toString().orEmpty()
+        val title = windowTitle.takeIf { it.isNotBlank() && it != pkg }
+            ?: eventTitle.takeIf { it.isNotBlank() }
+            ?: fragments.firstOrNull().orEmpty()
+        val raw = fragments.joinToString(" | ").take(1200)
+        if (browser && CalicoBrowserContext.isSensitive(title, raw)) {
+            lastContext = ""
+            lastAt = now
+            OrcaContextBrain.onSensitiveApp(applicationContext)
+            return
+        }
+        val context = OrcaPrivacy.sanitize(raw)
+        val signature = if (browser) "${title.take(140)} | ${context}" else context
+        if (signature == lastContext) return
+        lastContext = signature
         lastAt = now
-        OrcaContextBrain.onVisibleContext(applicationContext, pkg, context)
+        if (browser) OrcaContextBrain.onBrowserTab(applicationContext, pkg, title, context)
+        if (context.isNotBlank()) OrcaContextBrain.onVisibleContext(applicationContext, pkg, context)
     }
 
     private fun collectText(node: AccessibilityNodeInfo, out: MutableList<String>, depth: Int) {
