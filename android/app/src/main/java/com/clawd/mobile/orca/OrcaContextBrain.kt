@@ -108,6 +108,7 @@ object OrcaContextBrain {
             } else 1
             lastAppSwitchAt = time
         }
+        CalicoPetAI.invalidate()
         currentPackage = pkg
         browserMood = null
         lastBrowserAnimation = null
@@ -212,6 +213,7 @@ object OrcaContextBrain {
     fun onScreen(context: Context, on: Boolean) {
         if (!active(context)) return
         screenOn = on
+        if (!on) CalicoPetAI.invalidate()
         if (on) lastActivityAt = now()
         refresh(context)
     }
@@ -271,6 +273,7 @@ object OrcaContextBrain {
     }
     @Synchronized
     fun onSensitiveApp(context: Context) {
+        CalicoPetAI.invalidate()
         currentPackage = ""
         previousPackage = ""
         browserMood = null
@@ -286,6 +289,7 @@ object OrcaContextBrain {
 
     @Synchronized
     fun stop() {
+        CalicoPetAI.invalidate()
         handler.removeCallbacks(scheduledRefresh)
         currentPackage = ""
         previousPackage = ""
@@ -469,6 +473,7 @@ object OrcaContextBrain {
         if (tab != null) {
             if (tab.animation != lastBrowserAnimation) {
                 OrcaPetController.react(app, tab.animation)
+                CalicoPetAI.refine(app, tab.category, tab.animation)
                 lastBrowserAnimation = tab.animation
             }
             lastIntent = when (tab.category) {
@@ -584,6 +589,10 @@ object OrcaContextBrain {
         lastIntent = intent
         lastIntentAt = now()
         OrcaPetController.react(context, intent.animation)
+        if (screenOn && !deviceIdle && interactive &&
+            intent != OrcaIntent.SLEEP && intent != OrcaIntent.NOTIFICATION) {
+            CalicoPetAI.refine(context, intent.name.lowercase(), intent.animation)
+        }
 
         val learnWeight = when {
             reason == "user correction" -> 8
