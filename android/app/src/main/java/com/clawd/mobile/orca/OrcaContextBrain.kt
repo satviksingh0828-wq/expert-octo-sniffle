@@ -33,6 +33,8 @@ object OrcaContextBrain {
 
     private var currentPackage = ""
     private var previousPackage = ""
+    private var browserMood: CalicoBrowserContext.Mood? = null
+    private var lastBrowserAnimation: String? = null
     private var editorFocused = false
     private var lastTypedAt = 0L
     private var lastScrollAt = 0L
@@ -107,6 +109,8 @@ object OrcaContextBrain {
             lastAppSwitchAt = time
         }
         currentPackage = pkg
+        browserMood = null
+        lastBrowserAnimation = null
         if (sessionStartedAt == 0L) sessionStartedAt = time
         editorFocused = false
         lastTypedAt = 0L
@@ -152,6 +156,25 @@ object OrcaContextBrain {
         onForeground(context, pkg)
         lastTapAt = now()
         lastActivityAt = lastTapAt
+        refresh(context)
+    }
+
+    /** Classify the accessible browser tab locally; discard the text immediately. */
+    @Synchronized
+    fun onBrowserTab(context: Context, pkg: String, title: String, visible: String) {
+        if (!active(context) || !CalicoBrowserContext.isBrowser(pkg)) return
+        onForeground(context, pkg)
+        if (CalicoBrowserContext.isSensitive(title, visible)) {
+            browserMood = null
+            lastBrowserAnimation = null
+            refresh(context)
+            return
+        }
+        val classified = CalicoBrowserContext.classify(title, visible) ?: return
+        if (browserMood == classified) return
+        browserMood = classified
+        lastBrowserAnimation = null
+        OrcaLogStore.append(context, "Browser tab classified locally as ${classified.category}")
         refresh(context)
     }
 
@@ -250,6 +273,8 @@ object OrcaContextBrain {
     fun onSensitiveApp(context: Context) {
         currentPackage = ""
         previousPackage = ""
+        browserMood = null
+        lastBrowserAnimation = null
         editorFocused = false
         lastTypedAt = 0L
         appSwitchBurst = 0
@@ -264,6 +289,8 @@ object OrcaContextBrain {
         handler.removeCallbacks(scheduledRefresh)
         currentPackage = ""
         previousPackage = ""
+        browserMood = null
+        lastBrowserAnimation = null
         editorFocused = false
         lastTypedAt = 0L
         musicPlaying = false
@@ -435,6 +462,31 @@ object OrcaContextBrain {
         lastMargin = margin
 
         val hard = hardIntent(features)
+        // Actual browser tab mood overrides a generic Browsing prediction, but not
+        // a screen-off, typing, notification, playback, or device error hard signal.
+        val tab = if (hard == null && screenOn && interactive && !deviceIdle &&
+            CalicoBrowserContext.isBrowser(currentPackage)) browserMood else null
+        if (tab != null) {
+            if (tab.animation != lastBrowserAnimation) {
+                OrcaPetController.react(app, tab.animation)
+                lastBrowserAnimation = tab.animation
+            }
+            lastIntent = when (tab.category) {
+                "coding" -> OrcaIntent.CODING
+                "studying" -> OrcaIntent.TYPING
+                "music" -> OrcaIntent.MUSIC
+                "reading" -> OrcaIntent.READING
+                "searching" -> OrcaIntent.THINKING
+                "web-error" -> OrcaIntent.ERROR
+                "success" -> OrcaIntent.SUCCESS
+                else -> OrcaIntent.BROWSING
+            }
+            lastIntentAt = time
+            pendingIntent = null
+            scheduleNext(time)
+            return
+        }
+        lastBrowserAnimation = null
         val proposed = hard ?: fallbackIntent(features, neuralIntent, neuralConfidence, margin)
         val chosen = if (hard != null) {
             pendingIntent = null
