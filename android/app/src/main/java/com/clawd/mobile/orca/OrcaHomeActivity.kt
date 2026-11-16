@@ -47,6 +47,7 @@ class OrcaHomeActivity : ComponentActivity() {
     private var running by mutableStateOf(false)
     private var mood by mutableStateOf("calico-idle.apng")
     private var status by mutableStateOf("")
+    private var selectedModel by mutableStateOf("pet")
     private var modelReady by mutableStateOf(false)
     private var modelDownloading by mutableStateOf(false)
     private var modelProgress by mutableIntStateOf(0)
@@ -71,6 +72,8 @@ class OrcaHomeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         chats = CalicoChatStore.load(this)
         modelReady = CalicoModelManager.ready(this)
+        selectedModel = CalicoModelChoice.get(this)
+        if (selectedModel == "qwen" && !modelReady) selectedModel = "pet"
         if (chats.isNotEmpty()) activeId = chats.first().id
         showWelcome = !getSharedPreferences("calico_onboarding", MODE_PRIVATE)
             .getBoolean("welcome_seen_v1", false)
@@ -86,6 +89,7 @@ class OrcaHomeActivity : ComponentActivity() {
                     generating = busy,
                     mood = mood,
                     petRunning = running,
+                    selectedModel = selectedModel,
                     modelReady = modelReady,
                     modelDownloading = modelDownloading,
                     modelProgress = modelProgress,
@@ -98,6 +102,7 @@ class OrcaHomeActivity : ComponentActivity() {
                     onPermissions = { showPermissions = true },
                     onTogglePet = { if (running) stopPet() else requestPet() },
                     onInstallModel = ::installModel,
+                    onSelectModel = ::selectModel,
                     onCalendar = ::openCalendar,
                     onSearch = ::openSearch,
                     onMaps = ::openMaps,
@@ -206,6 +211,20 @@ class OrcaHomeActivity : ComponentActivity() {
         else if (!isPetManuallyStopped()) startPet()
     }
 
+    private fun selectModel(choice: String) {
+        if (choice == "qwen" && !modelReady) {
+            status = "Download Qwen3 first to select its language model."
+            return
+        }
+        selectedModel = if (choice == "qwen") "qwen" else "pet"
+        CalicoModelChoice.set(this, selectedModel)
+        status = if (selectedModel == "qwen") {
+            "Qwen selected: AI chat and richer pet decisions run in Calico."
+        } else {
+            "Built-in pet brain selected: basic chat and instant animations work with no download."
+        }
+    }
+
     private fun installModel() {
         if (modelDownloading || modelReady) return
         modelDownloading = true
@@ -218,6 +237,7 @@ class OrcaHomeActivity : ComponentActivity() {
                     status = "Installing local AI: " + pct + "%"
                 }
                 modelReady = CalicoModelManager.ready(this@OrcaHomeActivity)
+                if (modelReady) selectModel("qwen")
                 status = if (modelReady) "Qwen3 installed. Chat now runs entirely in Calico."
                     else "Local model could not be verified."
             } catch (error: Exception) {
@@ -254,9 +274,9 @@ class OrcaHomeActivity : ComponentActivity() {
     private fun send() {
         val prompt = draft.trim()
         if (busy || prompt.isEmpty()) return
-        if (!modelReady) {
-            status = CalicoModelManager.INSTALL_HELP
-            return
+        if (selectedModel == "qwen" && !modelReady) {
+            selectedModel = "pet"
+            CalicoModelChoice.set(this, "pet")
         }
         val current = chats.find { it.id == activeId }
             ?: CalicoChatThread(UUID.randomUUID().toString(), "New chat", emptyList()).also {
@@ -269,10 +289,22 @@ class OrcaHomeActivity : ComponentActivity() {
         val title = if (current.messages.isEmpty()) prompt.take(38) else current.title
         persist(chats.map { if (it.id == id) it.copy(title = title, messages = updated) else it })
         draft = ""
-        busy = true
+        busy = selectedModel == "qwen"
         mood = CalicoChatEngine.animationFor(prompt)
         OrcaPetController.react(this, mood)
-        status = "Generating with the model on this Android device…"
+        if (selectedModel == "pet") {
+            val response = CalicoBuiltInChat.reply(prompt)
+            val thread = chats.find { it.id == id }
+            if (thread != null) {
+                replaceMessages(id, thread.messages.dropLast(1) +
+                    CalicoChatMessage("assistant", response))
+            }
+            mood = CalicoChatEngine.animationFor(response)
+            OrcaPetController.react(this, mood)
+            status = "Built-in Calico pet brain · instant offline response"
+            return
+        }
+        status = "Qwen is responding inside Calico on this Android device…"
         lifecycleScope.launch {
             val response = StringBuilder()
             try {
