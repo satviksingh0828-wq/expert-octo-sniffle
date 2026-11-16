@@ -11,6 +11,9 @@ import androidx.core.content.ContextCompat
 import android.graphics.PixelFormat
 import android.os.BatteryManager
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
+import android.view.View
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
@@ -68,6 +71,15 @@ class FloatingPetService : Service() {
     private var localReactionJob: Job? = null
     private var localReactionUntil = 0L
     private var pendingLocalAnimation: String? = null
+    private var screenActive = true
+    private var beforeScreenOffAnimation = "calico-idle.apng"
+    private val overlaySleepHandler = Handler(Looper.getMainLooper())
+    private val hideAfterSleep = Runnable {
+        if (!screenActive && character == "calico") {
+            petView?.visibility = View.INVISIBLE
+            com.clawd.mobile.orca.OrcaLogStore.append(this, "Calico hidden after 30s of screen-off sleep")
+        }
+    }
 
     // --- State management ---
     private lateinit var stateManager: PetStateManager
@@ -115,6 +127,10 @@ class FloatingPetService : Service() {
         systemStateMonitor = OrcaSystemStateMonitor(applicationContext).also { it.start() }
         showFloatingWindow()
         reloadGif()
+        if (character == "calico" &&
+            !(getSystemService(POWER_SERVICE) as PowerManager).isInteractive) {
+            onScreenPowerChanged(false)
+        }
         started = true
         approvalBubbleManager?.start()
     }
@@ -123,6 +139,10 @@ class FloatingPetService : Service() {
         if (intent?.action == ACTION_ORCA_ANIMATION) {
             val animation = intent.getStringExtra(EXTRA_ORCA_ANIMATION) ?: return START_STICKY
             if (character == "calico" && animation in com.clawd.mobile.orca.OrcaPetController.animations) {
+                if (!screenActive && animation != "calico-sleeping.apng") return START_STICKY
+                if (petView?.visibility != View.VISIBLE && screenActive) {
+                    petView?.visibility = View.VISIBLE
+                }
                 localReactionJob?.cancel()
                 // ORCA owns the Calico state. Keep the selected animation visible
                 // until the next screen-description decision instead of reverting
@@ -181,6 +201,7 @@ class FloatingPetService : Service() {
         stateManager.reset()
         commandCollectorJob?.cancel()
         localReactionJob?.cancel()
+        overlaySleepHandler.removeCallbacks(hideAfterSleep)
         scope.cancel()
         unregisterBroadcastReceiver()
         deviceSignalMonitor?.stop()
@@ -303,8 +324,14 @@ class FloatingPetService : Service() {
         val screenW = resources.displayMetrics.widthPixels
         val screenH = resources.displayMetrics.heightPixels
 
-        val defaultCx = screenW / 2f
-        val defaultCy = screenH / 2f
+        // Default lower-right for new installs; preserve user-dragged coordinates.
+        val edge = 18f * density
+        val defaultCx = if (character == "calico") {
+            (screenW - edge - sizePx / 2f).coerceAtLeast(sizePx / 2f)
+        } else screenW / 2f
+        val defaultCy = if (character == "calico") {
+            (screenH - edge - sizePx / 2f).coerceAtLeast(sizePx / 2f)
+        } else screenH / 2f
         val savedCx = prefsStore.getPetContentCx(defaultCx)
         val savedCy = prefsStore.getPetContentCy(defaultCy)
         val savedX = (savedCx - sizePx / 2f).toInt()
@@ -454,10 +481,12 @@ class FloatingPetService : Service() {
                 when (intent.action) {
                     Intent.ACTION_SCREEN_OFF -> {
                         deviceSignalMonitor?.setSamplingPolicy(screenOn = false)
+                        onScreenPowerChanged(false)
                         com.clawd.mobile.orca.OrcaContextBrain.onScreen(applicationContext, false)
                     }
                     Intent.ACTION_SCREEN_ON -> {
                         deviceSignalMonitor?.setSamplingPolicy(screenOn = true)
+                        onScreenPowerChanged(true)
                         com.clawd.mobile.orca.OrcaContextBrain.onScreen(applicationContext, true)
                     }
                     Intent.ACTION_BATTERY_CHANGED -> syncDeviceContext(intent)
@@ -525,6 +554,45 @@ class FloatingPetService : Service() {
             isLandscape = landscape
         )
     }
+    /**
+     * SCREEN_OFF can turn the physical panel dark immediately, so Android may
+     * not visibly display this overlay during those 30 seconds. The pet still
+     * enters sleeping state and is removed after 30 seconds; wake restores it.
+     */
+    private fun onScreenPowerChanged(on: Boolean) {
+        overlaySleepHandler.removeCallbacks(hideAfterSleep)
+        screenActive = on
+        if (character != "calico") return
+        if (!on) {
+            val path = petView?.currentAssetPath.orEmpty()
+            if (path.startsWith("svg/calico/") && !path.endsWith("calico-sleeping.apng")) {
+                beforeScreenOffAnimation = path.substringAfterLast('/')
+            }
+            localReactionJob?.cancel()
+            localReactionUntil = Long.MAX_VALUE
+            pendingLocalAnimation = "calico-sleeping.apng"
+            petView?.let { view ->
+                view.visibility = View.VISIBLE
+                SvgLoader.loadSvg(view, "svg/calico/calico-sleeping.apng", loop = true)
+            }
+            overlaySleepHandler.postDelayed(hideAfterSleep, 30_000L)
+        } else {
+            petView?.visibility = View.VISIBLE
+            localReactionUntil = Long.MAX_VALUE
+            pendingLocalAnimation = null
+            val view = petView
+            if (view != null) {
+                SvgLoader.loadSvg(view, "svg/calico/calico-waking.apng", loop = false)
+                overlaySleepHandler.postDelayed({
+                    if (screenActive && petView === view &&
+                        view.currentAssetPath == "svg/calico/calico-waking.apng") {
+                        SvgLoader.loadSvg(view, "svg/calico/$beforeScreenOffAnimation", loop = true)
+                    }
+                }, 2_200L)
+            }
+        }
+    }
+
     private fun unregisterBroadcastReceiver() {
         broadcastReceiver?.let {
             try { unregisterReceiver(it) } catch (e: Exception) {
