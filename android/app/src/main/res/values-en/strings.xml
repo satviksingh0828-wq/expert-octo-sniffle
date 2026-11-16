@@ -1,6 +1,6 @@
 <resources>
     <!-- App -->
-    <string name="app_name">Clawd Mobile</string>
+    <string name="app_name">Calico</string>
 
     <!-- Notification channels -->
     <string name="channel_approval">Approval Requests</string>

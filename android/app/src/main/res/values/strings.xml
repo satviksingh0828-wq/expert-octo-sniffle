@@ -1,6 +1,6 @@
 <resources>
     <!-- App -->
-    <string name="app_name">ORCA</string>
+    <string name="app_name">Calico</string>
 
     <!-- Notification channels -->
     <string name="channel_approval">审批请求</string>

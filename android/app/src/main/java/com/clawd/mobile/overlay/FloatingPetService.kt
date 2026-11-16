@@ -376,6 +376,11 @@ class FloatingPetService : Service() {
                 if (approvalBubbleManager?.hasPending() == true) {
                     // Approval bubble is managed by PetApprovalBubbleManager, no-op here
                     // (it auto-shows on permission request arrival)
+                } else if (character == "calico") {
+                    // Calico is a chat-first companion: one tap opens its on-device assistant.
+                    startActivity(Intent(this, com.clawd.mobile.orca.OrcaHomeActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    })
                 } else {
                     layoutParams?.let { bubbleManager?.toggle(it) }
                 }

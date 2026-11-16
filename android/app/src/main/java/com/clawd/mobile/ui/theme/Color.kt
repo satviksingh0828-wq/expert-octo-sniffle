@@ -3,21 +3,21 @@ package com.clawd.mobile.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // Clawd brand colors — dashboard aligned
-val ClawdAccent = Color(0xFFB45309)          // amber
-val ClawdAccentLight = Color(0xFFD97706)
-val ClawdAccentDark = Color(0xFF92400E)
+val ClawdAccent = Color(0xFF7D3D28)          // amber
+val ClawdAccentLight = Color(0xFFE9A455)
+val ClawdAccentDark = Color(0xFF573325)
 
 // Light mode
-val ClawdBackground = Color(0xFFF5F5F7)
+val ClawdBackground = Color(0xFFFFF9F1)
 val ClawdSurface = Color(0xFFFFFFFF)
-val ClawdSurfaceAlt = Color(0xFFECECEF)
+val ClawdSurfaceAlt = Color(0xFFFFE8CB)
 val ClawdText = Color(0xFF18181B)
 val ClawdMuted = Color(0xFF6B6B70)
 val ClawdBorder = Color(0x14000000)          // rgba(0,0,0,0.08)
 
 // Dark mode
-val ClawdBackgroundDark = Color(0xFF111318)    // mockup page bg
-val ClawdSurfaceDark = Color(0xFF1A1D26)      // mockup card bg
+val ClawdBackgroundDark = Color(0xFF1D1816)    // mockup page bg
+val ClawdSurfaceDark = Color(0xFF2C2421)      // mockup card bg
 val ClawdSurfaceAltDark = Color(0xFF18181B)
 val ClawdTextDark = Color(0xFFF2F2F2)        // mockup primary text
 val ClawdMutedDark = Color(0xFFA1A1AA)
