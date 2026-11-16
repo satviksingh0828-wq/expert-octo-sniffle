@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- An original portrait drawn in the palette of the packaged Calico sprite. -->
+    <path android:fillColor="#E9A455"
+        android:pathData="M54,4 C25,4 5,25 5,54 C5,83 26,104 54,104 C83,104 104,83 104,54 C104,25 82,4 54,4Z"/>
+    <path android:fillColor="#7D3D28"
+        android:pathData="M23,45 L18,14 Q18,9 24,13 L44,28 L67,28 L85,13 Q91,9 91,16 L84,46 Q96,58 88,77 Q78,94 54,96 Q29,94 19,77 Q12,59 23,45Z"/>
+    <path android:fillColor="#FFFAF3"
+        android:pathData="M27,47 L23,22 L42,36 Q54,31 66,36 L83,22 L80,47 Q90,63 81,77 Q71,88 54,89 Q35,89 26,77 Q17,63 27,47Z"/>
+    <!-- distinctive cream / ginger / brown calico patches -->
+    <path android:fillColor="#E9A455"
+        android:pathData="M23,23 L41,36 Q54,29 58,38 Q49,45 49,54 Q41,62 29,60 L24,47Z"/>
+    <path android:fillColor="#7D3D28"
+        android:pathData="M83,22 L67,36 Q57,32 56,43 Q62,50 62,57 Q75,63 83,52Z"/>
+    <path android:fillColor="#D58F78"
+        android:pathData="M26,45 L24,28 L37,38Z M82,45 L84,28 L72,39Z"/>
+    <path android:fillColor="#372820"
+        android:pathData="M33,60 C36,55 43,55 46,60 C43,65 36,65 33,60Z M62,60 C65,55 72,55 75,60 C72,65 65,65 62,60Z"/>
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M39,58 A2,2 0,1 1,38.9 58Z M68,58 A2,2 0,1 1,67.9 58Z"/>
+    <path android:fillColor="#D98F80"
+        android:pathData="M49,69 Q54,65 59,69 L54,74Z"/>
+    <path android:strokeColor="#7D3D28" android:strokeWidth="1.7"
+        android:strokeLineCap="round" android:fillColor="@android:color/transparent"
+        android:pathData="M54,74 Q51,79 47,77 M54,74 Q57,79 61,77 M39,71 L21,68 M40,75 L21,77 M69,71 L87,68 M68,75 L87,77"/>
+</vector>

@@ -11,4 +11,9 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+    <!-- Only this device's private loopback llama.cpp server permits HTTP. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain>127.0.0.1</domain>
+        <domain>localhost</domain>
+    </domain-config>
 </network-security-config>
