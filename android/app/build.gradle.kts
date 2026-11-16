@@ -16,8 +16,8 @@ android {
         applicationId = "com.orca.companion"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1013
-        versionName = "0.17.0-calico"
+        versionCode = 1014
+        versionName = "0.18.0-calico"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -85,6 +85,11 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.navigation.compose)
     implementation(libs.lifecycle.runtime)
+
+    // True on-device conversational model runtime; no API key or Termux server.
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.0")
+    // Hilt annotation processors must read modern model-runtime Kotlin metadata.
+    ksp("org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.21")
 
     // HTTP / WebSocket
     implementation(libs.okhttp)
