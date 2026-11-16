@@ -107,7 +107,11 @@ class FloatingPetService : Service() {
         loadPrefs()
         registerBroadcastReceiver()
         syncDeviceContext()
-        deviceSignalMonitor = OrcaDeviceSignalMonitor(applicationContext).also { it.start() }
+        deviceSignalMonitor = OrcaDeviceSignalMonitor(applicationContext).also {
+            val power = getSystemService(POWER_SERVICE) as PowerManager
+            it.setSamplingPolicy(screenOn = power.isInteractive, powerSave = power.isPowerSaveMode)
+            it.start()
+        }
         systemStateMonitor = OrcaSystemStateMonitor(applicationContext).also { it.start() }
         showFloatingWindow()
         reloadGif()
@@ -443,8 +447,14 @@ class FloatingPetService : Service() {
         broadcastReceiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
                 when (intent.action) {
-                    Intent.ACTION_SCREEN_OFF -> com.clawd.mobile.orca.OrcaContextBrain.onScreen(applicationContext, false)
-                    Intent.ACTION_SCREEN_ON -> com.clawd.mobile.orca.OrcaContextBrain.onScreen(applicationContext, true)
+                    Intent.ACTION_SCREEN_OFF -> {
+                        deviceSignalMonitor?.setSamplingPolicy(screenOn = false)
+                        com.clawd.mobile.orca.OrcaContextBrain.onScreen(applicationContext, false)
+                    }
+                    Intent.ACTION_SCREEN_ON -> {
+                        deviceSignalMonitor?.setSamplingPolicy(screenOn = true)
+                        com.clawd.mobile.orca.OrcaContextBrain.onScreen(applicationContext, true)
+                    }
                     Intent.ACTION_BATTERY_CHANGED -> syncDeviceContext(intent)
                     Intent.ACTION_POWER_CONNECTED,
                     Intent.ACTION_POWER_DISCONNECTED,
@@ -500,6 +510,7 @@ class FloatingPetService : Service() {
         val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
             status == BatteryManager.BATTERY_STATUS_FULL
         val powerSave = (getSystemService(POWER_SERVICE) as? PowerManager)?.isPowerSaveMode ?: false
+        deviceSignalMonitor?.setSamplingPolicy(powerSave = powerSave)
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         com.clawd.mobile.orca.OrcaContextBrain.onDeviceContext(
             applicationContext,
