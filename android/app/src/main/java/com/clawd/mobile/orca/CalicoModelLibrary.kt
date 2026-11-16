@@ -38,7 +38,7 @@ data class CalicoModelVariant(
     val hardwareSpecific: Boolean get() {
         val name = path.lowercase()
         return listOf("tensor_g", "qualcomm", "qnn", "_npu", "_tpu",
-            "mediatek", "neuro", "hexagon").any(name::contains)
+            "mediatek", "neuro", "hexagon", "adreno", "_gpu", "samsung").any(name::contains)
     }
 }
 
@@ -300,8 +300,12 @@ object CalicoModelLibrary {
                     return@mapNotNull null
                 }
                 val lfs = item.optJSONObject("lfs")
-                val expected = (lfs?.optString("oid").orEmpty())
-                    .takeIf { shaPattern.matches(it) } ?: ""
+                // The Hub's LFS metadata has used both "oid" and "sha256"
+                // as JSON keys. Accept either, never an unverified Git blob ID.
+                val expected = listOf(
+                    lfs?.optString("oid").orEmpty(),
+                    lfs?.optString("sha256").orEmpty()
+                ).firstOrNull { shaPattern.matches(it) } ?: ""
                 val size = lfs?.optLong("size")?.takeIf { it > 0L }
                     ?: item.optLong("size", 0L)
                 if (size <= 0L || size > MAX_MODEL_BYTES) return@mapNotNull null
