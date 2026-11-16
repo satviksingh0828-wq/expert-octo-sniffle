@@ -10,27 +10,35 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-/** The optional user-selected model is shared by chat and pet. */
+/** The user-selected model is shared by chat and pet. */
 object CalicoModelChoice {
     private const val PREF = "calico_model_choice"
     private const val KEY = "active_chat_and_pet"
 
-    fun get(context: Context): String =
-        if (context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
-                .getString(KEY, "pet") == "qwen") "qwen" else "pet"
+    fun get(context: Context): String {
+        val selected = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+            .getString(KEY, "pet").orEmpty()
+        return when (selected) {
+            "pet", "" -> "pet"
+            // Migrate the 0.18 model selection without deleting its existing weights.
+            "qwen" -> if (CalicoModelLibrary.isInstalled(context, CalicoModelLibrary.LEGACY_ID))
+                CalicoModelLibrary.LEGACY_ID else "pet"
+            else -> selected
+        }
+    }
 
     fun set(context: Context, value: String) {
         context.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit()
-            .putString(KEY, if (value == "qwen") "qwen" else "pet").apply()
+            .putString(KEY, if (value.isBlank()) "pet" else value).apply()
     }
 
-    fun qwenEnabled(context: Context): Boolean =
-        get(context) == "qwen" && CalicoModelManager.ready(context)
+    fun modelEnabled(context: Context): Boolean =
+        get(context) != "pet" && CalicoModelLibrary.ready(context)
 }
 
 /**
- * Optional Qwen animation refinements. The pet's existing neural brain is
- * instant and always active as fallback. Qwen decisions are throttled, verified
+ * Optional local language-model animation refinements. The pet's existing neural brain is
+ * instant and always active as fallback. Model decisions are throttled, verified
  * against the asset allowlist, and use *no raw title, URL or screen text*.
  */
 object CalicoPetAI {
@@ -49,7 +57,7 @@ object CalicoPetAI {
     fun refine(context: Context, category: String, builtInAnimation: String) {
         val app = context.applicationContext
         if (!OrcaPrivacy.enabled(app) || !FloatingPetService.isRunning ||
-            !CalicoModelChoice.qwenEnabled(app)) return
+            !CalicoModelChoice.modelEnabled(app)) return
         if (category in setOf("sleep", "sensitive", "notification", "typing", "screen off")) return
         if (builtInAnimation !in OrcaPetController.animations) return
         val power = app.getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -81,7 +89,7 @@ object CalicoPetAI {
                 if (animation != null) {
                     synchronized(this@CalicoPetAI) {
                         if (token == contextGeneration &&
-                            CalicoModelChoice.qwenEnabled(app) &&
+                            CalicoModelChoice.modelEnabled(app) &&
                             (app.getSystemService(Context.POWER_SERVICE) as? PowerManager)
                                 ?.isInteractive != false) {
                             OrcaPetController.react(app, animation)

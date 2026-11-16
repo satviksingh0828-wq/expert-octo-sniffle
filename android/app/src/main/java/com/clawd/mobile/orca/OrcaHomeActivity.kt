@@ -36,6 +36,8 @@ import androidx.lifecycle.lifecycleScope
 import com.clawd.mobile.data.PrefsStore
 import com.clawd.mobile.overlay.FloatingPetService
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import java.util.UUID
 
 /** Calico: private local chat, animated companion, and explicit Android permission onboarding. */
@@ -49,8 +51,18 @@ class OrcaHomeActivity : ComponentActivity() {
     private var status by mutableStateOf("")
     private var selectedModel by mutableStateOf("pet")
     private var modelReady by mutableStateOf(false)
+    private var activeModelTitle by mutableStateOf("Built-in pet brain")
+    private var installedModels by mutableStateOf<List<CalicoInstalledModel>>(emptyList())
+    private var modelRepositories by mutableStateOf<List<CalicoModelRepo>>(emptyList())
+    private var modelVariants by mutableStateOf<List<CalicoModelVariant>>(emptyList())
+    private var inspectingRepository by mutableStateOf<CalicoModelRepo?>(null)
+    private var catalogLoading by mutableStateOf(false)
+    private var variantLoading by mutableStateOf(false)
+    private var catalogError by mutableStateOf("")
+    private var downloadingId by mutableStateOf<String?>(null)
     private var modelDownloading by mutableStateOf(false)
     private var modelProgress by mutableIntStateOf(0)
+    private var modelDownloadJob: Job? = null
     private var showWelcome by mutableStateOf(false)
     private var showPermissions by mutableStateOf(false)
     private var overlayPending = false
@@ -71,9 +83,8 @@ class OrcaHomeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         chats = CalicoChatStore.load(this)
-        modelReady = CalicoModelManager.ready(this)
         selectedModel = CalicoModelChoice.get(this)
-        if (selectedModel == "qwen" && !modelReady) selectedModel = "pet"
+        refreshInstalledModels()
         if (chats.isNotEmpty()) activeId = chats.first().id
         showWelcome = !getSharedPreferences("calico_onboarding", MODE_PRIVATE)
             .getBoolean("welcome_seen_v1", false)
@@ -90,9 +101,18 @@ class OrcaHomeActivity : ComponentActivity() {
                     mood = mood,
                     petRunning = running,
                     selectedModel = selectedModel,
+                    activeModelTitle = activeModelTitle,
                     modelReady = modelReady,
                     modelDownloading = modelDownloading,
                     modelProgress = modelProgress,
+                    installedModels = installedModels,
+                    modelRepositories = modelRepositories,
+                    modelVariants = modelVariants,
+                    inspectingRepository = inspectingRepository,
+                    catalogLoading = catalogLoading,
+                    variantLoading = variantLoading,
+                    downloadingId = downloadingId,
+                    catalogError = catalogError,
                     status = status,
                     onDraftChange = { draft = it.take(6000) },
                     onSend = ::send,
@@ -101,8 +121,13 @@ class OrcaHomeActivity : ComponentActivity() {
                     onDelete = ::deleteChat,
                     onPermissions = { showPermissions = true },
                     onTogglePet = { if (running) stopPet() else requestPet() },
-                    onInstallModel = ::installModel,
                     onSelectModel = ::selectModel,
+                    onModelsOpen = { searchModels("") },
+                    onModelsSearch = ::searchModels,
+                    onModelsInspect = ::inspectModelRepository,
+                    onModelInstall = ::downloadModel,
+                    onModelRemove = ::removeModel,
+                    onModelPause = { modelDownloadJob?.cancel() },
                     onCalendar = ::openCalendar,
                     onSearch = ::openSearch,
                     onMaps = ::openMaps,
@@ -170,7 +195,7 @@ class OrcaHomeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         running = FloatingPetService.isRunning
-        modelReady = CalicoModelManager.ready(this)
+        refreshInstalledModels()
         if (!showWelcome && missingCompanionPermissions()) {
             // Re-check every return from Android Settings and each new launch.
             showPermissions = true
@@ -211,40 +236,122 @@ class OrcaHomeActivity : ComponentActivity() {
         else if (!isPetManuallyStopped()) startPet()
     }
 
+    private fun refreshInstalledModels() {
+        installedModels = CalicoModelLibrary.installed(this)
+        modelReady = CalicoModelLibrary.ready(this)
+        if (selectedModel != "pet" && !modelReady) {
+            selectedModel = "pet"
+            CalicoModelChoice.set(this, "pet")
+        }
+        activeModelTitle = CalicoModelLibrary.activeTitle(this)
+    }
+
     private fun selectModel(choice: String) {
-        if (choice == "qwen" && !modelReady) {
-            status = "Download Qwen3 first to select its language model."
+        if (busy) {
+            catalogError = "Finish the current AI response before switching models."
             return
         }
-        selectedModel = if (choice == "qwen") "qwen" else "pet"
-        CalicoModelChoice.set(this, selectedModel)
-        status = if (selectedModel == "qwen") {
-            "Qwen selected: AI chat and richer pet decisions run in Calico."
-        } else {
-            "Built-in pet brain selected: basic chat and instant animations work with no download."
+        if (choice != "pet" && !CalicoModelLibrary.isInstalled(this, choice)) {
+            catalogError = "Download and verify this model before selecting it."
+            return
+        }
+        CalicoPetAI.invalidate()
+        selectedModel = choice
+        CalicoModelChoice.set(this, choice)
+        refreshInstalledModels()
+        catalogError = ""
+        status = if (choice == "pet")
+            "Built-in Calico pet brain selected. Basic chat and animations are ready."
+        else
+            activeModelTitle + " selected for local chat and AI-assisted cat reactions."
+    }
+
+    private fun searchModels(query: String) {
+        if (catalogLoading) return
+        catalogLoading = true
+        catalogError = ""
+        lifecycleScope.launch {
+            try {
+                modelRepositories = CalicoModelLibrary.search(
+                    this@OrcaHomeActivity, query)
+                if (modelRepositories.isEmpty()) {
+                    catalogError = "No public LiteRT-LM models matched. Try another search."
+                }
+            } catch (error: Exception) {
+                catalogError = "Could not refresh catalog: " +
+                    (error.message ?: "Check internet.").take(150)
+            } finally {
+                catalogLoading = false
+            }
         }
     }
 
-    private fun installModel() {
-        if (modelDownloading || modelReady) return
-        modelDownloading = true
-        modelProgress = 0
-        status = "Downloading Qwen3-0.6B into Calico's private storage; keep the app open."
+    private fun inspectModelRepository(repo: CalicoModelRepo) {
+        inspectingRepository = repo
+        modelVariants = emptyList()
+        variantLoading = true
+        catalogError = ""
         lifecycleScope.launch {
             try {
-                CalicoModelManager.install(this@OrcaHomeActivity) { pct ->
-                    modelProgress = pct
-                    status = "Installing local AI: " + pct + "%"
+                val files = CalicoModelLibrary.variants(repo)
+                if (inspectingRepository?.id == repo.id) {
+                    modelVariants = files
                 }
-                modelReady = CalicoModelManager.ready(this@OrcaHomeActivity)
-                if (modelReady) selectModel("qwen")
-                status = if (modelReady) "Qwen3 installed. Chat now runs entirely in Calico."
-                    else "Local model could not be verified."
             } catch (error: Exception) {
-                modelReady = false
-                status = "Model download failed: " + (error.message ?: "Try again on Wi-Fi.").take(130)
+                catalogError = "Model details unavailable: " +
+                    (error.message ?: "Check internet.").take(150)
             } finally {
+                variantLoading = false
+            }
+        }
+    }
+
+    private fun downloadModel(option: CalicoModelVariant) {
+        if (downloadingId != null) return
+        modelDownloading = true
+        downloadingId = option.id
+        modelProgress = 0
+        catalogError = ""
+        status = "Downloading " + option.title + " to Calico's private storage."
+        modelDownloadJob = lifecycleScope.launch {
+            try {
+                CalicoModelLibrary.install(this@OrcaHomeActivity, option) { value ->
+                    modelProgress = value
+                }
+                refreshInstalledModels()
+                selectModel(option.id)
+                status = option.title + " installed and selected. AI runs entirely on this device."
+            } catch (_: CancellationException) {
+                catalogError = "Download paused. Tap Download again to resume from saved bytes."
+                status = "Model download paused."
+            } catch (error: Exception) {
+                catalogError = "Download failed: " +
+                    (error.message ?: "Please retry.").take(170)
+                status = "Model was not installed. You can retry or resume."
+            } finally {
+                downloadingId = null
                 modelDownloading = false
+                modelDownloadJob = null
+            }
+        }
+    }
+
+    private fun removeModel(id: String) {
+        if (busy || downloadingId != null) return
+        if (id == selectedModel) {
+            catalogError = "Select the built-in pet brain before removing this model."
+            return
+        }
+        lifecycleScope.launch {
+            try {
+                // Release any previously used cached native engine before removing files.
+                CalicoOnDeviceModel.unload()
+                val deleted = CalicoModelLibrary.remove(this@OrcaHomeActivity, id)
+                refreshInstalledModels()
+                catalogError = if (deleted) "" else "Couldn't remove this model."
+            } catch (error: Exception) {
+                catalogError = "Unable to delete model: " +
+                    (error.message ?: "Try again.").take(140)
             }
         }
     }
@@ -274,7 +381,7 @@ class OrcaHomeActivity : ComponentActivity() {
     private fun send() {
         val prompt = draft.trim()
         if (busy || prompt.isEmpty()) return
-        if (selectedModel == "qwen" && !modelReady) {
+        if (selectedModel != "pet" && !modelReady) {
             selectedModel = "pet"
             CalicoModelChoice.set(this, "pet")
         }
@@ -289,7 +396,7 @@ class OrcaHomeActivity : ComponentActivity() {
         val title = if (current.messages.isEmpty()) prompt.take(38) else current.title
         persist(chats.map { if (it.id == id) it.copy(title = title, messages = updated) else it })
         draft = ""
-        busy = selectedModel == "qwen"
+        busy = selectedModel != "pet"
         mood = CalicoChatEngine.animationFor(prompt)
         OrcaPetController.react(this, mood)
         if (selectedModel == "pet") {
@@ -304,7 +411,7 @@ class OrcaHomeActivity : ComponentActivity() {
             status = "Built-in Calico pet brain · instant offline response"
             return
         }
-        status = "Qwen is responding inside Calico on this Android device…"
+        status = activeModelTitle + " is responding inside Calico…"
         lifecycleScope.launch {
             val response = StringBuilder()
             try {
@@ -320,7 +427,9 @@ class OrcaHomeActivity : ComponentActivity() {
             } catch (error: Exception) {
                 val thread = chats.find { it.id == id }
                 if (thread != null) {
-                    val explanation = if (response.isEmpty()) CalicoChatEngine.OFFLINE_HELP
+                    val explanation = if (response.isEmpty())
+                        "The installed model could not start. Choose another model in Models, " +
+                            "or use the built-in pet brain. " + (error.message ?: "").take(160)
                         else response.toString() + "\n\n(Local generation interrupted.)"
                     replaceMessages(id, thread.messages.dropLast(1) +
                         CalicoChatMessage("assistant", explanation))
