@@ -68,6 +68,9 @@ fun CalicoChatScreen(
     generating: Boolean,
     mood: String,
     petRunning: Boolean,
+    modelReady: Boolean,
+    modelDownloading: Boolean,
+    modelProgress: Int,
     status: String,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
@@ -76,8 +79,12 @@ fun CalicoChatScreen(
     onDelete: (String) -> Unit,
     onPermissions: () -> Unit,
     onTogglePet: () -> Unit,
+    onInstallModel: () -> Unit,
     onCalendar: () -> Unit,
     onSearch: () -> Unit,
+    onMaps: () -> Unit,
+    onEmail: () -> Unit,
+    onFiles: () -> Unit,
     onClearAll: () -> Unit
 ) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -148,7 +155,7 @@ fun CalicoChatScreen(
                 }
                 Column(Modifier.weight(1f)) {
                     Text("Calico", fontWeight = FontWeight.Bold, color = colors.onSurface, fontSize = 21.sp)
-                    Text("LOCAL AI · NO API KEY", color = colors.primary, fontSize = 10.sp,
+                    Text(if (modelReady) "QWEN3 LOCAL AI · READY" else "OFFLINE AI · SETUP NEEDED", color = colors.primary, fontSize = 10.sp,
                         fontWeight = FontWeight.Bold)
                 }
                 TextButton(onClick = onPermissions) { Text("⚙", fontSize = 22.sp) }
@@ -161,7 +168,6 @@ fun CalicoChatScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    CalicoAnimatedAvatar(mood, modifier = Modifier.size(190.dp))
                     Text("Hi, I'm Calico!", color = colors.onBackground, fontSize = 27.sp,
                         fontWeight = FontWeight.ExtraBold)
                     Spacer(Modifier.height(10.dp))
@@ -170,7 +176,8 @@ fun CalicoChatScreen(
                     Spacer(Modifier.height(14.dp))
                     Surface(shape = RoundedCornerShape(14.dp),
                         color = colors.secondaryContainer) {
-                        Text("AI replies need llama.cpp running locally in Termux.",
+                        Text(if (modelReady) "Qwen3-0.6B is ready for fully offline conversation."
+                             else "Install the free local AI model once (~614 MB). It runs entirely inside Calico after download.",
                             modifier = Modifier.padding(12.dp), color = colors.onSecondaryContainer,
                             fontSize = 12.sp, textAlign = TextAlign.Center)
                     }
@@ -196,17 +203,49 @@ fun CalicoChatScreen(
                     }
                 }
             }
+            // A permanently reserved bottom-right dock keeps the animated cat
+            // visible while typing, without floating over chat messages.
+            Row(
+                Modifier.fillMaxWidth().height(105.dp).padding(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("🐾 Calico is with you", color = colors.primary,
+                        fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    if (!modelReady) {
+                        if (modelDownloading) {
+                            Text("Installing local AI: $modelProgress%", fontSize = 12.sp,
+                                color = colors.onSurfaceVariant)
+                        } else {
+                            Button(onClick = onInstallModel,
+                                shape = RoundedCornerShape(14.dp)) {
+                                Text("↓ Download offline AI (~614 MB)", fontSize = 12.sp)
+                            }
+                        }
+                    } else {
+                        Text("Chat and pet reactions run on this device",
+                            color = colors.onSurfaceVariant, fontSize = 11.sp)
+                    }
+                }
+                CalicoAnimatedAvatar(mood, modifier = Modifier.size(100.dp))
+            }
             if (status.isNotBlank()) {
                 Text(status, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                     color = colors.onSurfaceVariant, fontSize = 12.sp)
             }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                modifier = Modifier.fillMaxWidth()
+                    .horizontalScroll(androidx.compose.foundation.rememberScrollState())
+                    .padding(horizontal = 10.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 TextButton(onClick = onTogglePet) { Text(if (petRunning) "🐾 Pet on" else "🐾 Start pet") }
                 TextButton(onClick = onCalendar) { Text("Calendar") }
                 TextButton(onClick = onSearch) { Text("Search") }
+                TextButton(onClick = onMaps) { Text("Maps") }
+                TextButton(onClick = onEmail) { Text("Email") }
+                TextButton(onClick = onFiles) { Text("Files") }
             }
             Row(
                 Modifier.fillMaxWidth().background(colors.surface)
@@ -226,14 +265,15 @@ fun CalicoChatScreen(
                 )
                 Button(
                     onClick = onSend,
-                    enabled = !generating && draft.isNotBlank(),
+                    enabled = modelReady && !generating && draft.isNotBlank(),
                     modifier = Modifier.padding(bottom = 4.dp).height(52.dp),
                     shape = CircleShape,
                     colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
                 ) { Text("➤", fontSize = 18.sp) }
             }
             Text(
-                "Private on-device chats • The local model never needs an API key",
+                if (modelReady) "Model: Qwen3-0.6B · private local inference · no API key"
+                else "One-time model download required · no Termux or API key",
                 modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
                 color = colors.onSurfaceVariant, fontSize = 10.sp,
                 textAlign = TextAlign.Center
