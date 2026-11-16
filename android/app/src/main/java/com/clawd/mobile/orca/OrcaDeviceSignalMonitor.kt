@@ -34,9 +34,6 @@ class OrcaDeviceSignalMonitor(private val context: Context) : SensorEventListene
     private var lastMotionDispatchAt = 0L
     private var motionEma = 0f
     private var screenActive = true
-    private var powerSave = false
-    private var sensorRegistered = false
-    private var screenActive = true
     private var batterySaver = false
     private var sensorRegistered = false
 
@@ -84,9 +81,9 @@ class OrcaDeviceSignalMonitor(private val context: Context) : SensorEventListene
     }
 
     /** Event-driven sampling policy; no accelerometer use with screen off or battery saver. */
-    fun setSamplingPolicy(screenOn: Boolean? = null, powerSave: Boolean? = null) {
+    fun setSamplingPolicy(screenOn: Boolean? = null, batterySaver: Boolean? = null) {
         screenOn?.let { screenActive = it }
-        powerSave?.let { batterySaver = it }
+        batterySaver?.let { this.batterySaver = it }
         updateSensorRegistration()
     }
 
