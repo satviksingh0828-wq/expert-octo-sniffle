@@ -16,8 +16,8 @@ android {
         applicationId = "com.orca.companion"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1014
-        versionName = "0.18.0-calico"
+        versionCode = 1015
+        versionName = "0.19.0-calico"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
