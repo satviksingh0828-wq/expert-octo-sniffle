@@ -173,24 +173,6 @@ fun CalicoModelLibraryDialog(
                     if (searching) {
                         item { Text("Refreshing available models…", color = colors.primary) }
                     }
-                    items(repositories, key = { "repo-" + it.id }) { repo ->
-                        Surface(color = colors.surfaceVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(10.dp)) {
-                            Column(Modifier.fillMaxWidth()
-                                .clickable { onInspect(repo) }.padding(10.dp)) {
-                                Text(repo.title, fontWeight = FontWeight.SemiBold,
-                                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(repo.id, color = colors.onSurfaceVariant,
-                                    fontSize = 11.sp, maxLines = 2)
-                                Row(Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Downloads " + repo.downloads,
-                                        color = colors.onSurfaceVariant, fontSize = 11.sp)
-                                    Text("View model files", color = colors.primary, fontSize = 12.sp)
-                                }
-                            }
-                        }
-                    }
                     if (inspectingRepo != null) {
                         item {
                             Spacer(Modifier.height(8.dp))
@@ -228,6 +210,24 @@ fun CalicoModelLibraryDialog(
                                 }
                             }
                             HorizontalDivider()
+                        }
+                    }
+                    items(repositories, key = { "repo-" + it.id }) { repo ->
+                        Surface(color = colors.surfaceVariant.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(10.dp)) {
+                            Column(Modifier.fillMaxWidth()
+                                .clickable { onInspect(repo) }.padding(10.dp)) {
+                                Text(repo.title, fontWeight = FontWeight.SemiBold,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(repo.id, color = colors.onSurfaceVariant,
+                                    fontSize = 11.sp, maxLines = 2)
+                                Row(Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Downloads " + repo.downloads,
+                                        color = colors.onSurfaceVariant, fontSize = 11.sp)
+                                    Text("View model files", color = colors.primary, fontSize = 12.sp)
+                                }
+                            }
                         }
                     }
                     item {
