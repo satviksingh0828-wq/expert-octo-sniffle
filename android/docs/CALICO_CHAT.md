@@ -2,29 +2,45 @@
 
 Calico uses the cream/ginger/cocoa cat design and existing packaged Calico animations.
 
-## Chat and model choices
+## Chat and the live model library (Calico 0.19)
 
-The app opens with **Built-in Calico pet brain** selected. This is the existing lightweight
-34-signal neural activity classifier plus deterministic basic chat. It is ready without
-downloading anything or using an account. The built-in model is **not a generative LLM**:
-it can explain its capabilities, respond to basic greetings and react to activity
-topics, but cannot reliably answer arbitrary questions.
+**Default model:** Built-in Calico pet brain. It is a compact activity classifier
+and basic deterministic chat, not an unrestricted conversational LLM.
 
-Open **Models** in Calico's chat header to optionally download **Qwen3-0.6B** (about
-614 MB) from Hugging Face. The download runs only after the user taps the button,
-is saved in Calico's private app storage, is checked with SHA-256, and is not
-sent to any AI service for inference. The app uses Google LiteRT-LM on-device
-inference on the CPU and does not need Termux, Ollama, an external server,
-Google account permissions, or any API key. Allow roughly 1 GB of free storage
-for downloading and installation. After installation, you can switch between
-**Built-in pet brain** and **Qwen3-0.6B** in the Models dialog.
+Open **Models** to access the new searchable live **Hugging Face LiteRT-LM**
+model library. The catalog refreshes when the screen opens and whenever you
+submit a search. You can inspect a repository for downloadable model variants,
+see size and hardware requirements, and download compatible public
+`.litertlm` weights without a key. The list is no longer fixed to only Qwen.
 
-The same model selection applies to both **chat and pet**. When Qwen is selected
-and available, it can refine the pet's animation from coarse, non-private
-activity categories every 45 seconds at most. The existing neural pet brain
-continues to choose immediate reactions and is always the fallback. Qwen
-suggestions are constrained to packaged Calico animations. Screen text and
-browser titles are **never sent** to the model's pet animation prompt.
+**Download workflow:**
+
+1. Open Models → search for Qwen, Gemma, Llama, Phi, etc.
+2. Select a public LiteRT model repository, then inspect its individual files.
+3. Choose a model with a published SHA-256 LFS digest and a plausible size.
+4. Press Download & Verify. Downloads go to **private app storage**, can be
+   paused and resumed, and are checked against upstream SHA-256 before activation.
+5. Choose Use for the installed model. That same model powers both **chat** and
+   periodically refines **pet animations** through a safe animation allowlist.
+6. Switch back to Built-in pet brain at any time or remove non-active models.
+
+Search and model downloads require an internet connection, but once installed,
+AI inference is local in the Android app. No Termux server, Ollama gateway,
+cloud AI, account sign-in, or API key is necessary. A large model may not run
+reliably on every device; Calico's runtime currently initializes LiteRT-LM
+on **CPU**, so specialized NPU builds are marked and cannot be downloaded from
+the general model picker. Some public repositories may not publish SHA-256
+file digests; such files are shown but cannot be installed. Gated/private
+repositories are excluded.
+
+**GGUF/Ollama models are not supported by this LiteRT-LM runtime.** They require
+an additional embedded llama.cpp-compatible backend, which is not included in
+this release. A model's presence in search does not guarantee runtime
+compatibility or sufficient device memory.
+
+Calico 0.18's already-verified Qwen3-0.6B download remains discoverable on an
+upgrade; existing installed bytes are not removed. The previous model choice
+can be migrated to the new model ID.
 
 ## App layout and controls
 
@@ -62,10 +78,11 @@ lock-screen animation is not guaranteed, nor can Calico power on the display.
 
 ## Limits
 
-Qwen needs an explicit one-time download and sufficient device RAM/storage.
-LiteRT-LM model initialization may take several seconds. Small language models
-can still make errors. The app's conversational inference is local; a fresh
-model download requires internet access. No Gemini cloud API or secret keys.
+Language models need sufficient RAM, storage, and compatible LiteRT-LM
+operators. Not every model will load successfully on every device.
+Model initialization may take several seconds, and small models can still
+make factual errors. Catalog discovery and model downloads require internet;
+inference remains local after installation. No Gemini cloud API or keys.
 
 System-level Circle to Search, image-based screen analysis, and full Gmail,
 Drive, Tasks and Google-account authorization are **not implemented**.
