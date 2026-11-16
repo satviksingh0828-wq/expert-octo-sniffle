@@ -81,9 +81,9 @@ class OrcaDeviceSignalMonitor(private val context: Context) : SensorEventListene
     }
 
     /** Event-driven sampling policy; no accelerometer use with screen off or battery saver. */
-    fun setSamplingPolicy(screenOn: Boolean? = null, batterySaver: Boolean? = null) {
+    fun setSamplingPolicy(screenOn: Boolean? = null, powerSave: Boolean? = null) {
         screenOn?.let { screenActive = it }
-        batterySaver?.let { this.batterySaver = it }
+        powerSave?.let { batterySaver = it }
         updateSensorRegistration()
     }
 
